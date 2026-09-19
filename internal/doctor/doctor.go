@@ -447,7 +447,7 @@ func checkSuperpowers(ctx context.Context) Result {
 	dirty := execOut(ctx, 15*time.Second, dir, "git", "status", "-uno", "--porcelain=v1")
 	note := "main sinkron origin"
 	if dirty != "" {
-		first := strings.SplitN(dirty, "\n", 2)[0]
+		first, _, _ := strings.Cut(dirty, "\n")
 		note += "; kerja kotor: " + first
 	}
 	if local == remote {
@@ -475,7 +475,7 @@ func checkHerdrIntegrations(ctx context.Context) Result {
 		return unknown("herdr-integr", "-", "-", "gagal baca integration status")
 	}
 	need := []string{}
-	for _, line := range strings.Split(out, "\n") {
+	for line := range strings.SplitSeq(out, "\n") {
 		if strings.HasPrefix(line, "pi:") && !strings.Contains(line, "current") {
 			need = append(need, "pi")
 		}

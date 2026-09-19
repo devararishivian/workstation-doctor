@@ -17,6 +17,7 @@ linters:
     - predeclared  # bayangan identifier bawaan (len, cap, ...)
     - revive       # aturan gaya umum
     - gocritic     # opini perbaikan kode
+    - modernize    # idiom Go terbaru (go1.21–1.27)
     - nolintlint   # //nolint wajib sebut linter + alasan
   settings:
     errcheck:
