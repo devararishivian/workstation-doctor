@@ -15,9 +15,20 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/charmbracelet/lipgloss"
+)
+
+// Status colors follow the Catppuccin palette. lipgloss renders them
+// only on a capable terminal; piped output stays plain automatically.
+var (
+	okStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#A6E3A1"))
+	updateStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#F9E2AF"))
+	unknownStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#F38BA8"))
 )
 
 // Status of one component.
@@ -152,7 +163,10 @@ func FormatTable(results []Result) string {
 			trunc(r.Component, 22), trunc(r.Installed, 16), trunc(r.Latest, 16), r.Status, r.Note)
 	}
 	s := Summarize(results)
-	fmt.Fprintf(&b, "\nSummary: %d OK · %d need update · %d unknown\n", s.OK, s.Update, s.Unknown)
+	fmt.Fprintf(&b, "\nSummary: %s · %s · %s\n",
+		okStyle.Render(strconv.Itoa(s.OK)+" OK"),
+		updateStyle.Render(strconv.Itoa(s.Update)+" need update"),
+		unknownStyle.Render(strconv.Itoa(s.Unknown)+" unknown"))
 	return b.String()
 }
 

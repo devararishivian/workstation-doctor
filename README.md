@@ -16,7 +16,7 @@ Use `make help` to list targets. Build the binary once, then run a command:
 
 ```sh
 go build -o workstation-doctor .
-./workstation-doctor                     # interactive menu
+./workstation-doctor                     # interactive menu (keyboard on a terminal, numbered when piped)
 ./workstation-doctor check               # read-only check and save the run
 ./workstation-doctor manual              # ordered manual steps
 ./workstation-doctor fix                 # automatic fix with confirmation

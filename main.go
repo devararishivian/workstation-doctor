@@ -125,7 +125,12 @@ func doCheck(ctx context.Context, cmd *cli.Command) error {
 	if err != nil {
 		return cli.Exit(err.Error(), 2)
 	}
-	out := newOutputLogger(cmd.Root().Writer)
+	return renderCheck(newOutputLogger(cmd.Root().Writer), results, runID)
+}
+
+// renderCheck prints a gathered check result and maps it to an exit
+// decision. Menu and subcommand paths share it.
+func renderCheck(out zerolog.Logger, results []doctor.Result, runID int64) error {
 	out.Info().Msg(doctor.FormatTable(results))
 	if runID > 0 {
 		out.Info().Msg("Saved run: #" + strconv.FormatInt(runID, 10))
@@ -146,7 +151,12 @@ func doManual(ctx context.Context, cmd *cli.Command) error {
 	if err != nil {
 		return cli.Exit(err.Error(), 2)
 	}
-	out := newOutputLogger(cmd.Root().Writer)
+	return renderManual(newOutputLogger(cmd.Root().Writer), results, runID)
+}
+
+// renderManual prints a gathered manual result. Menu and subcommand
+// paths share it.
+func renderManual(out zerolog.Logger, results []doctor.Result, runID int64) error {
 	out.Info().Msg(doctor.FormatTable(results))
 	out.Info().Msg(doctor.FormatManual(results))
 	if runID > 0 {
@@ -177,8 +187,12 @@ func doFix(ctx context.Context, cmd *cli.Command, autoYes bool) error {
 	if err != nil {
 		return cli.Exit(err.Error(), 2)
 	}
-	w := cmd.Root().Writer
-	out := newOutputLogger(w)
+	return runFixFlow(ctx, newOutputLogger(cmd.Root().Writer), path, results, runID, autoYes)
+}
+
+// runFixFlow executes the interactive part of fix on gathered results:
+// list, confirm, execute, record. Menu and subcommand paths share it.
+func runFixFlow(ctx context.Context, out zerolog.Logger, path string, results []doctor.Result, runID int64, autoYes bool) error {
 	out.Info().Msg(doctor.FormatTable(results))
 	pending := doctor.Pending(results)
 	out.Info().Msg("== Automatic fix ==")
@@ -346,34 +360,7 @@ func menuRun(err error) {
 }
 
 func interactiveMenu(ctx context.Context, cmd *cli.Command) error {
-	out := newOutputLogger(cmd.Root().Writer)
-	in := bufio.NewScanner(os.Stdin)
-	for {
-		out.Info().Msg("\nworkstation-doctor")
-		out.Info().Msg("  1. Check status (read-only)")
-		out.Info().Msg("  2. Show ordered manual steps")
-		out.Info().Msg("  3. Run automatic fix")
-		out.Info().Msg("  4. Show history")
-		out.Info().Msg("  0. Quit")
-		out.Info().Msg("Select [0-4]: ")
-		if !in.Scan() {
-			return nil
-		}
-		switch strings.TrimSpace(in.Text()) {
-		case "1":
-			menuRun(doCheck(ctx, cmd))
-		case "2":
-			menuRun(doManual(ctx, cmd))
-		case "3":
-			menuRun(doFix(ctx, cmd, false))
-		case "4":
-			menuRun(doHistory(ctx, cmd))
-		case "0", "q", "quit", "exit":
-			return nil
-		default:
-			out.Info().Msg("Unknown selection.")
-		}
-	}
+	return runMenu(ctx, cmd)
 }
 
 func main() {

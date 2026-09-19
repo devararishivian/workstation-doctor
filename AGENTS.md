@@ -6,7 +6,11 @@ build task lives in the `Makefile`. This file covers neither. It covers the rule
 
 ## 1. Architecture map
 
-- `main.go` wires the CLI (`urfave/cli/v3`), owns both loggers, and handles exit codes. It contains no check logic.
+- `main.go` wires the CLI (`urfave/cli/v3`), owns both loggers, and
+  handles exit codes. It contains no check logic.
+- `menu.go` owns the interactive menu: a `huh` select menu with a
+  spinner on a terminal, and the classic numbered menu everywhere
+  else. Fancy chrome requires a TTY and must never leak into pipes.
 - `internal/doctor` runs read-only checks and returns data plus plain English report text. It never writes to disk,
   network, or terminal.
 - `internal/store` persists runs, results, and fix actions to embedded SQLite. It is the only package that touches the
