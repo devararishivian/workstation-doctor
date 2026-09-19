@@ -12,11 +12,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"workstation-doctor/internal/doctor"
 	"workstation-doctor/internal/store"
 
+	"github.com/rs/zerolog"
 	"github.com/urfave/cli/v3"
 
 	// The SQLite driver registers at the application root so the
@@ -26,6 +28,25 @@ import (
 
 // Version is set at build time when necessary (-ldflags "-X main.version=...").
 var version = "0.1.0"
+
+// newOutputLogger builds a logger for program output. It writes plain
+// lines without level or timestamp, so stdout stays pipeable for scripts.
+func newOutputLogger(w io.Writer) zerolog.Logger {
+	return zerolog.New(zerolog.ConsoleWriter{
+		Out:          w,
+		NoColor:      true,
+		PartsExclude: []string{zerolog.TimestampFieldName, zerolog.LevelFieldName},
+	})
+}
+
+// diag carries diagnostics (warnings and prompts) to stderr as leveled
+// events. The level stays visible, the timestamp does not: for a CLI,
+// when an event happened matters less than which run produced it.
+var diag = zerolog.New(zerolog.ConsoleWriter{
+	Out:          os.Stderr,
+	NoColor:      true,
+	PartsExclude: []string{zerolog.TimestampFieldName},
+})
 
 // defaultDBPath returns the default history database path. It returns
 // an empty string when the home directory cannot be determined, so the
@@ -50,7 +71,7 @@ func dbPath(cmd *cli.Command) (string, error) {
 func openStore(path string) *store.Store {
 	st, err := store.Open(path)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: run history was not saved (%v)\n", err)
+		diag.Warn().Err(err).Msg("run history was not saved")
 		return nil
 	}
 	return st
@@ -88,10 +109,10 @@ func runAndRecord(ctx context.Context, cmd *cli.Command) ([]doctor.Result, int64
 	if st := openStore(path); st != nil {
 		id, err := st.RecordRun(start, time.Now(), s.OK, s.Update, s.Unknown, exit, toRows(results))
 		if cerr := st.Close(); cerr != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to close history database (%v)\n", cerr)
+			diag.Warn().Err(cerr).Msg("failed to close history database")
 		}
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to save run (%v)\n", err)
+			diag.Warn().Err(err).Msg("failed to save run")
 		} else {
 			runID = id
 		}
@@ -104,9 +125,10 @@ func doCheck(ctx context.Context, cmd *cli.Command) error {
 	if err != nil {
 		return cli.Exit(err.Error(), 2)
 	}
-	doctor.PrintTable(cmd.Root().Writer, results)
+	out := newOutputLogger(cmd.Root().Writer)
+	out.Info().Msg(doctor.FormatTable(results))
 	if runID > 0 {
-		fmt.Fprintf(cmd.Root().Writer, "Saved run: #%d\n", runID)
+		out.Info().Msg("Saved run: #" + strconv.FormatInt(runID, 10))
 	}
 	s := doctor.Summarize(results)
 	switch {
@@ -124,10 +146,11 @@ func doManual(ctx context.Context, cmd *cli.Command) error {
 	if err != nil {
 		return cli.Exit(err.Error(), 2)
 	}
-	doctor.PrintTable(cmd.Root().Writer, results)
-	doctor.PrintManual(cmd.Root().Writer, results)
+	out := newOutputLogger(cmd.Root().Writer)
+	out.Info().Msg(doctor.FormatTable(results))
+	out.Info().Msg(doctor.FormatManual(results))
 	if runID > 0 {
-		fmt.Fprintf(cmd.Root().Writer, "Saved run: #%d\n", runID)
+		out.Info().Msg("Saved run: #" + strconv.FormatInt(runID, 10))
 	}
 	if doctor.Summarize(results).Update > 0 {
 		return cli.Exit("updates are pending", 1)
@@ -136,7 +159,7 @@ func doManual(ctx context.Context, cmd *cli.Command) error {
 }
 
 func askConfirm(prompt string) bool {
-	fmt.Fprint(os.Stderr, prompt+" [y/N] ")
+	diag.Info().Msg(prompt + " [y/N]")
 	sc := bufio.NewScanner(os.Stdin)
 	if !sc.Scan() {
 		return false
@@ -155,18 +178,19 @@ func doFix(ctx context.Context, cmd *cli.Command, autoYes bool) error {
 		return cli.Exit(err.Error(), 2)
 	}
 	w := cmd.Root().Writer
-	doctor.PrintTable(w, results)
+	out := newOutputLogger(w)
+	out.Info().Msg(doctor.FormatTable(results))
 	pending := doctor.Pending(results)
-	fmt.Fprintln(w, "\n== Automatic fix ==")
+	out.Info().Msg("== Automatic fix ==")
 	if len(pending) == 0 {
-		fmt.Fprintln(w, "No action is needed. All components are current.")
+		out.Info().Msg("No action is needed. All components are current.")
 		return nil
 	}
 	for i, r := range pending {
-		fmt.Fprintf(w, "%d. %s\n", i+1, r.Fix)
+		out.Info().Msg(strconv.Itoa(i+1) + ". " + r.Fix)
 	}
 	if !autoYes && !askConfirm(fmt.Sprintf("Run the %d commands above in order?", len(pending))) {
-		fmt.Fprintln(w, "Cancelled.")
+		out.Info().Msg("Cancelled.")
 		return nil
 	}
 	st := openStore(path)
@@ -175,10 +199,10 @@ func doFix(ctx context.Context, cmd *cli.Command, autoYes bool) error {
 	}
 	fail := 0
 	for _, r := range pending {
-		fmt.Fprintf(w, "\n$ %s\n", r.Fix)
+		out.Info().Msg("$ " + r.Fix)
 		start := time.Now()
 		c, cancel := context.WithTimeout(ctx, 10*time.Minute)
-		out, err := exec.CommandContext(c, "/bin/sh", "-c", r.Fix).CombinedOutput()
+		raw, err := exec.CommandContext(c, "/bin/sh", "-c", r.Fix).CombinedOutput()
 		cancel()
 		end := time.Now()
 		status := "ok"
@@ -186,14 +210,14 @@ func doFix(ctx context.Context, cmd *cli.Command, autoYes bool) error {
 			status = "fail"
 			fail++
 		}
-		fmt.Fprintf(w, "%s%s\n", truncateOut(string(out)), statusLine(status, r.Fix))
+		out.Info().Msg(truncateOut(string(raw)) + statusLine(status, r.Fix))
 		if st != nil {
-			if recErr := st.RecordAction(runID, "fix", r.Fix, status, lastBytes(string(out), 4096), start, end); recErr != nil {
-				fmt.Fprintf(os.Stderr, "warning: failed to record action (%v)\n", recErr)
+			if recErr := st.RecordAction(runID, "fix", r.Fix, status, lastBytes(string(raw), 4096), start, end); recErr != nil {
+				diag.Warn().Err(recErr).Msg("failed to record action")
 			}
 		}
 	}
-	fmt.Fprintf(w, "\nDone. Failed: %d of %d.\n", fail, len(pending))
+	out.Info().Msg("Done. Failed: " + strconv.Itoa(fail) + " of " + strconv.Itoa(len(pending)) + ".")
 	if fail > 0 {
 		return cli.Exit(fmt.Sprintf("%d actions failed", fail), 1)
 	}
@@ -227,7 +251,7 @@ func lastBytes(s string, n int) string {
 }
 
 func doHistory(_ context.Context, cmd *cli.Command) error {
-	w := cmd.Root().Writer
+	out := newOutputLogger(cmd.Root().Writer)
 	path, err := dbPath(cmd)
 	if err != nil {
 		return cli.Exit(err.Error(), 2)
@@ -238,7 +262,7 @@ func doHistory(_ context.Context, cmd *cli.Command) error {
 	}
 	defer st.Close() //nolint:errcheck // close errors need no action when a command ends
 	if id := cmd.Int64("run"); id > 0 {
-		return showRun(w, st, id)
+		return showRun(out, st, id)
 	}
 	// Flags --limit and --run exist only on the history subcommand.
 	// They read as zero from the interactive menu (root context).
@@ -251,20 +275,20 @@ func doHistory(_ context.Context, cmd *cli.Command) error {
 		return cli.Exit(fmt.Sprintf("cannot read history: %v", err), 2)
 	}
 	if len(runs) == 0 {
-		fmt.Fprintln(w, "No history yet. Run `check` first.")
+		out.Info().Msg("No history yet. Run `check` first.")
 		return nil
 	}
-	fmt.Fprintf(w, "\n%-6s %-20s %-4s %-7s %-8s %s\n", "RUN", "STARTED", "OK", "UPDATE", "UNKNOWN", "EXIT")
-	fmt.Fprintln(w, "----------------------------------------------------------------")
+	out.Info().Msg("\nRUN    STARTED              OK   UPDATE  UNKNOWN  EXIT")
+	out.Info().Msg("----------------------------------------------------------------")
 	for _, r := range runs {
-		fmt.Fprintf(w, "#%-5d %-20s %-4d %-7d %-8d %d\n",
-			r.ID, shortTS(r.StartedAt), r.NOk, r.NUpdate, r.NUnknown, r.ExitCode)
+		out.Info().Msg(fmt.Sprintf("#%-5d %-20s %-4d %-7d %-8d %d",
+			r.ID, shortTS(r.StartedAt), r.NOk, r.NUpdate, r.NUnknown, r.ExitCode))
 	}
-	fmt.Fprintln(w, "\nDetail of one run: workstation-doctor history --run <id>")
+	out.Info().Msg("Detail of one run: workstation-doctor history --run <id>")
 	return nil
 }
 
-func showRun(w io.Writer, st *store.Store, id int64) error {
+func showRun(out zerolog.Logger, st *store.Store, id int64) error {
 	results, err := st.RunResults(id)
 	if err != nil {
 		return cli.Exit(fmt.Sprintf("cannot read run #%d: %v", id, err), 2)
@@ -272,17 +296,17 @@ func showRun(w io.Writer, st *store.Store, id int64) error {
 	if len(results) == 0 {
 		return cli.Exit(fmt.Sprintf("run #%d was not found", id), 2)
 	}
-	fmt.Fprintf(w, "\n== Run #%d ==\n", id)
-	doctor.PrintTable(w, toDoctor(results))
+	out.Info().Msg("== Run #" + strconv.FormatInt(id, 10) + " ==")
+	out.Info().Msg(doctor.FormatTable(toDoctor(results)))
 	actions, err := st.RunActions(id)
 	if err != nil {
 		return cli.Exit(fmt.Sprintf("cannot read actions: %v", err), 2)
 	}
 	if len(actions) > 0 {
-		fmt.Fprintf(w, "\n== Actions ==\n")
+		out.Info().Msg("== Actions ==")
 		for _, a := range actions {
-			fmt.Fprintf(w, "- [%s] %s: %s (%s → %s)\n",
-				a.Status, a.Kind, a.Command, shortTS(a.StartedAt), shortTS(a.Finished))
+			out.Info().Msg("- [" + a.Status + "] " + a.Kind + ": " + a.Command +
+				" (" + shortTS(a.StartedAt) + " → " + shortTS(a.Finished) + ")")
 		}
 	}
 	return nil
@@ -318,19 +342,20 @@ func menuRun(err error) {
 	if errors.As(err, &ec) && ec.ExitCode() == 1 {
 		return
 	}
-	fmt.Fprintln(os.Stderr, "error:", err)
+	diag.Error().Msg(err.Error())
 }
 
 func interactiveMenu(ctx context.Context, cmd *cli.Command) error {
+	out := newOutputLogger(cmd.Root().Writer)
 	in := bufio.NewScanner(os.Stdin)
 	for {
-		fmt.Println("\nworkstation-doctor")
-		fmt.Println("  1. Check status (read-only)")
-		fmt.Println("  2. Show ordered manual steps")
-		fmt.Println("  3. Run automatic fix")
-		fmt.Println("  4. Show history")
-		fmt.Println("  0. Quit")
-		fmt.Print("Select [0-4]: ")
+		out.Info().Msg("\nworkstation-doctor")
+		out.Info().Msg("  1. Check status (read-only)")
+		out.Info().Msg("  2. Show ordered manual steps")
+		out.Info().Msg("  3. Run automatic fix")
+		out.Info().Msg("  4. Show history")
+		out.Info().Msg("  0. Quit")
+		out.Info().Msg("Select [0-4]: ")
 		if !in.Scan() {
 			return nil
 		}
@@ -346,7 +371,7 @@ func interactiveMenu(ctx context.Context, cmd *cli.Command) error {
 		case "0", "q", "quit", "exit":
 			return nil
 		default:
-			fmt.Println("Unknown selection.")
+			out.Info().Msg("Unknown selection.")
 		}
 	}
 }

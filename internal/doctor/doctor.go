@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"net/http"
 	"os"
@@ -141,16 +140,20 @@ func Run(ctx context.Context) []Result {
 	return results
 }
 
-// PrintTable prints the results as a text table.
-func PrintTable(w io.Writer, results []Result) {
-	fmt.Fprintf(w, "\n%-22s %-16s %-16s %-10s %s\n", "COMPONENT", "INSTALLED", "LATEST", "STATUS", "NOTE")
-	fmt.Fprintln(w, "----------------------------------------------------------------------------------------------")
+// FormatTable renders the results as a text table. It returns text
+// instead of writing it, so callers route the report through the
+// program-output logger and the output stays pipeable.
+func FormatTable(results []Result) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "\n%-22s %-16s %-16s %-10s %s\n", "COMPONENT", "INSTALLED", "LATEST", "STATUS", "NOTE")
+	fmt.Fprintln(&b, "----------------------------------------------------------------------------------------------")
 	for _, r := range results {
-		fmt.Fprintf(w, "%-22s %-16s %-16s %-10s %s\n",
+		fmt.Fprintf(&b, "%-22s %-16s %-16s %-10s %s\n",
 			trunc(r.Component, 22), trunc(r.Installed, 16), trunc(r.Latest, 16), r.Status, r.Note)
 	}
 	s := Summarize(results)
-	fmt.Fprintf(w, "\nSummary: %d OK · %d need update · %d unknown\n", s.OK, s.Update, s.Unknown)
+	fmt.Fprintf(&b, "\nSummary: %d OK · %d need update · %d unknown\n", s.OK, s.Update, s.Unknown)
+	return b.String()
 }
 
 func trunc(s string, n int) string {
@@ -161,17 +164,20 @@ func trunc(s string, n int) string {
 	return string(r[:n-1]) + "…"
 }
 
-// PrintManual prints the ordered manual steps for UPDATE results.
-func PrintManual(w io.Writer, results []Result) {
+// FormatManual renders the ordered manual steps for UPDATE results.
+// It returns text instead of writing it, for the same reason as FormatTable.
+func FormatManual(results []Result) string {
 	pending := Pending(results)
-	fmt.Fprintln(w, "\n== Ordered manual steps ==")
+	var b strings.Builder
+	fmt.Fprintln(&b, "\n== Ordered manual steps ==")
 	if len(pending) == 0 {
-		fmt.Fprintln(w, "No action is needed. All components are current.")
-		return
+		fmt.Fprintln(&b, "No action is needed. All components are current.")
+		return b.String()
 	}
 	for i, r := range pending {
-		fmt.Fprintf(w, "%d. %s\n", i+1, r.Manual)
+		fmt.Fprintf(&b, "%d. %s\n", i+1, r.Manual)
 	}
+	return b.String()
 }
 
 func ok(component, installed, latest, note string) Result {

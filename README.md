@@ -7,9 +7,12 @@ database.
 The stack is Go 1.27 with `github.com/urfave/cli/v3` and `modernc.org/sqlite`. The SQLite driver is pure Go, so the
 build needs no C compiler. There is no GUI and no new runtime dependency.
 
+Logs use `github.com/rs/zerolog`. Program output (tables, steps, history) goes to stdout as plain lines without level
+or timestamp, so scripts can pipe it. Diagnostics (warnings, prompts, failures) go to stderr as leveled events.
+
 ## Build and use
 
-Build the binary once, then run a command:
+Use `make help` to list targets. Build the binary once, then run a command:
 
 ```sh
 go build -o workstation-doctor .
@@ -52,10 +55,11 @@ If the database does not open, the tool still runs without history. It writes a 
 
 ## Test and lint
 
-Run these commands before each commit:
+Run these `make` targets before each commit:
 
 ```sh
-go vet ./... && go test ./...
-golangci-lint run ./...       # expect 0 issues (configuration: .golangci.yml)
-golangci-lint run --fix ./... # fix automatically what the tool can fix
+make vet && make test   # static check and tests
+make lint               # expect 0 issues (configuration: .golangci.yml)
+make lint-fix           # fix automatically what the tool can fix
+make vuln               # dependency vulnerability scan
 ```
