@@ -3,6 +3,10 @@ package store
 import (
 	"testing"
 	"time"
+
+	// Driver diregistrasi di paket test (root dependensi),
+	// bukan di kode library.
+	_ "modernc.org/sqlite"
 )
 
 func TestRecordAndListRuns(t *testing.T) {
@@ -10,7 +14,7 @@ func TestRecordAndListRuns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer st.Close()
+	defer st.Close() //nolint:errcheck // tutup DB test best-effort
 
 	start := time.Now()
 	id, err := st.RecordRun(start, start.Add(time.Second), 14, 1, 0, 1, []ResultRow{

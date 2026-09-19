@@ -1,0 +1,35 @@
+# Sumber kebenaran linter proyek ini. Dijalankan via:
+#   golangci-lint run ./...      # cek
+#   golangci-lint run --fix ./... # perbaiki otomatis yang bisa
+#   golangci-lint fmt ./...       # format
+version: "2"
+run:
+  timeout: 5m
+linters:
+  enable:
+    - govet        # analisis statis bawaan Go
+    - errcheck     # error yang dibuang tanpa alasan
+    - staticcheck  # pola bug umum
+    - unused       # kode tak terpakai
+    - ineffassign  # assignment tak efektif
+    - unconvert    # konversi berlebihan
+    - misspell     # typo komentar/kode
+    - predeclared  # bayangan identifier bawaan (len, cap, ...)
+    - revive       # aturan gaya umum
+    - gocritic     # opini perbaikan kode
+    - nolintlint   # //nolint wajib sebut linter + alasan
+  settings:
+    errcheck:
+      # Menulis tabel/prompt ke stdout bukan error yang actionable;
+      # close best-effort ditangani per-baris via //nolint beralasan.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+    nolintlint:
+      require-specific: true
+      require-explanation: true
+formatters:
+  enable:
+    - gofumpt
+    - goimports

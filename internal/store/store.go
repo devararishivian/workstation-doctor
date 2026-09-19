@@ -4,11 +4,10 @@ package store
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
-
-	_ "modernc.org/sqlite"
 )
 
 // Schema versi 1: satu run pengecekan memiliki banyak hasil komponen,
@@ -92,19 +91,19 @@ func DefaultPath() string {
 // Open membuka (dan membuat bila perlu) database di path.
 func Open(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("store: siapkan direktori %s: %w", filepath.Dir(path), err)
 	}
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("store: buka %s: %w", path, err)
 	}
 	if err := db.Ping(); err != nil {
 		_ = db.Close()
-		return nil, err
+		return nil, fmt.Errorf("store: ping %s: %w", path, err)
 	}
 	if _, err := db.Exec(schema); err != nil {
 		_ = db.Close()
-		return nil, err
+		return nil, fmt.Errorf("store: migrasi %s: %w", path, err)
 	}
 	return &Store{db: db}, nil
 }
@@ -123,30 +122,31 @@ func ts(t time.Time) string {
 func (s *Store) RecordRun(start, end time.Time, nOk, nUpdate, nUnknown, exitCode int, results []ResultRow) (int64, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("store: mulai transaksi run: %w", err)
 	}
+	// Rollback best-effort; Commit yang menentukan hasil akhir.
 	defer func() { _ = tx.Rollback() }()
 	res, err := tx.Exec(
 		`INSERT INTO check_runs(started_at, finished_at, n_ok, n_update, n_unknown, exit_code)
 		 VALUES(?,?,?,?,?,?)`,
 		ts(start), ts(end), nOk, nUpdate, nUnknown, exitCode)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("store: simpan run: %w", err)
 	}
 	runID, err := res.LastInsertId()
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("store: id run: %w", err)
 	}
 	for _, r := range results {
 		if _, err := tx.Exec(
 			`INSERT INTO check_results(run_id, component, installed, latest, status, note)
 			 VALUES(?,?,?,?,?,?)`,
 			runID, r.Component, r.Installed, r.Latest, r.Status, r.Note); err != nil {
-			return 0, err
+			return 0, fmt.Errorf("store: simpan hasil %s: %w", r.Component, err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return 0, err
+		return 0, fmt.Errorf("store: commit run: %w", err)
 	}
 	return runID, nil
 }
@@ -157,7 +157,10 @@ func (s *Store) RecordAction(runID int64, kind, command, status, output string, 
 		`INSERT INTO actions(run_id, kind, command, status, output, started_at, finished_at)
 		 VALUES(?,?,?,?,?,?,?)`,
 		runID, kind, command, status, output, ts(start), ts(end))
-	return err
+	if err != nil {
+		return fmt.Errorf("store: simpan aksi %q: %w", command, err)
+	}
+	return nil
 }
 
 // ListRuns mengembalikan N run terbaru (terbaru dulu).
@@ -168,8 +171,8 @@ func (s *Store) ListRuns(limit int) ([]Run, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []Run
+	defer rows.Close() //nolint:errcheck // rows close best-effort setelah query selesai dibaca
+	out := []Run{}
 	for rows.Next() {
 		var r Run
 		if err := rows.Scan(&r.ID, &r.StartedAt, &r.FinishedAt, &r.NOk, &r.NUpdate, &r.NUnknown, &r.ExitCode); err != nil {
@@ -188,8 +191,8 @@ func (s *Store) RunResults(runID int64) ([]ResultRow, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []ResultRow
+	defer rows.Close() //nolint:errcheck // rows close best-effort setelah query selesai dibaca
+	out := []ResultRow{}
 	for rows.Next() {
 		var r ResultRow
 		if err := rows.Scan(&r.Component, &r.Installed, &r.Latest, &r.Status, &r.Note); err != nil {
@@ -208,8 +211,8 @@ func (s *Store) RunActions(runID int64) ([]ActionRow, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []ActionRow
+	defer rows.Close() //nolint:errcheck // rows close best-effort setelah query selesai dibaca
+	out := []ActionRow{}
 	for rows.Next() {
 		var a ActionRow
 		if err := rows.Scan(&a.ID, &a.RunID, &a.Kind, &a.Command, &a.Status, &a.Output, &a.StartedAt, &a.Finished); err != nil {

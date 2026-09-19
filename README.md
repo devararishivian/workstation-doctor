@@ -48,8 +48,10 @@ untuk override). Skema v1:
 Bila DB tidak dapat dibuka, tool tetap jalan tanpa persistensi
 (peringatan ke stderr).
 
-## Test
+## Test & lint
 
 ```sh
 go vet ./... && go test ./...
+golangci-lint run ./...       # harus 0 issues (config: .golangci.yml)
+golangci-lint run --fix ./... # perbaiki otomatis yang bisa
 ```

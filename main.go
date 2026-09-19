@@ -7,15 +7,19 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
+	"workstation-doctor/internal/doctor"
+	"workstation-doctor/internal/store"
 
 	"github.com/urfave/cli/v3"
 
-	"workstation-doctor/internal/doctor"
-	"workstation-doctor/internal/store"
+	// Driver SQLite diregistrasi di root aplikasi agar side effect
+	// init() terlihat di sini, bukan tersembunyi di library.
+	_ "modernc.org/sqlite"
 )
 
 // Version diisi saat build bila perlu (-ldflags "-X main.version=...").
@@ -105,7 +109,7 @@ func doManual(ctx context.Context, cmd *cli.Command) error {
 }
 
 func askConfirm(prompt string) bool {
-	fmt.Print(prompt + " [y/N] ")
+	fmt.Fprint(os.Stderr, prompt+" [y/N] ")
 	sc := bufio.NewScanner(os.Stdin)
 	if !sc.Scan() {
 		return false
@@ -134,7 +138,7 @@ func doFix(ctx context.Context, cmd *cli.Command, autoYes bool) error {
 	}
 	st := openStore(path)
 	if st != nil {
-		defer st.Close()
+		defer st.Close() //nolint:errcheck // tutup DB best-effort saat command selesai
 	}
 	fail := 0
 	for _, r := range pending {
@@ -195,13 +199,13 @@ func doHistory(_ context.Context, cmd *cli.Command) error {
 	if st == nil {
 		return cli.Exit("database riwayat tidak dapat dibuka", 2)
 	}
-	defer st.Close()
+	defer st.Close() //nolint:errcheck // tutup DB best-effort saat command selesai
 	if id := cmd.Int64("run"); id > 0 {
 		return showRun(w, st, id)
 	}
 	// Flag --limit/--run hanya terdefinisi di subcommand history;
 	// bila dipanggil dari menu interaktif (konteks root) nilainya nol.
-	limit := int(cmd.Int("limit"))
+	limit := cmd.Int("limit")
 	if limit <= 0 {
 		limit = 10
 	}
@@ -223,7 +227,7 @@ func doHistory(_ context.Context, cmd *cli.Command) error {
 	return nil
 }
 
-func showRun(w interface{ Write([]byte) (int, error) }, st *store.Store, id int64) error {
+func showRun(w io.Writer, st *store.Store, id int64) error {
 	results, err := st.RunResults(id)
 	if err != nil {
 		return cli.Exit(fmt.Sprintf("gagal baca run #%d: %v", id, err), 2)

@@ -8,11 +8,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -61,7 +63,7 @@ func Summarize(results []Result) Summary {
 
 // Pending mengembalikan hasil berstatus UPDATE (butuh tindakan).
 func Pending(results []Result) []Result {
-	var out []Result
+	out := []Result{}
 	for _, r := range results {
 		if r.Status == StatusUpdate {
 			out = append(out, r)
@@ -85,6 +87,9 @@ func execOut(ctx context.Context, timeout time.Duration, dir, name string, args 
 	if dir != "" {
 		cmd.Dir = dir
 	}
+	// Exit non-nol bermakna di sini (mis. npm outdated exit 1
+	// saat ada paket tertinggal) sehingga error sengaja diabaikan
+	// dan stdout tetap dipakai.
 	out, _ := cmd.Output()
 	return strings.TrimSpace(string(out))
 }
@@ -158,8 +163,10 @@ func ok(component, installed, latest, note string) Result {
 }
 
 func needUpdate(component, installed, latest, manual, fix, note string) Result {
-	return Result{Component: component, Installed: installed, Latest: latest,
-		Status: StatusUpdate, Note: note, Manual: manual, Fix: fix}
+	return Result{
+		Component: component, Installed: installed, Latest: latest,
+		Status: StatusUpdate, Note: note, Manual: manual, Fix: fix,
+	}
 }
 
 func unknown(component, installed, latest, note string) Result {
@@ -325,7 +332,7 @@ func pypiLatest(ctx context.Context, pkg string) string {
 	if err != nil {
 		return ""
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // body close best-effort pada read path
 	var v struct {
 		Info struct {
 			Version string `json:"version"`
@@ -389,17 +396,7 @@ func npmOutdatedKeys(ctx context.Context, dir string) string {
 	if json.Unmarshal([]byte(out), &v) != nil {
 		return ""
 	}
-	keys := make([]string, 0, len(v))
-	for k := range v {
-		keys = append(keys, k)
-	}
-	// Urutkan agar deterministik.
-	for i := 1; i < len(keys); i++ {
-		for j := i; j > 0 && keys[j] < keys[j-1]; j-- {
-			keys[j], keys[j-1] = keys[j-1], keys[j]
-		}
-	}
-	return strings.Join(keys, " ")
+	return strings.Join(slices.Sorted(maps.Keys(v)), " ")
 }
 
 func checkNpmOutdatedGlobal(ctx context.Context) Result {
@@ -477,7 +474,7 @@ func checkHerdrIntegrations(ctx context.Context) Result {
 	if strings.TrimSpace(out) == "" {
 		return unknown("herdr-integr", "-", "-", "gagal baca integration status")
 	}
-	var need []string
+	need := []string{}
 	for _, line := range strings.Split(out, "\n") {
 		if strings.HasPrefix(line, "pi:") && !strings.Contains(line, "current") {
 			need = append(need, "pi")
@@ -518,7 +515,7 @@ func checkPiConfig(_ context.Context) Result {
 	settings := filepath.Join(h, ".pi", "agent", "settings.json")
 	mcp := filepath.Join(h, ".pi", "agent", "mcp.json")
 	cache := filepath.Join(h, ".pi", "agent", "mcp-cache.json")
-	var problems []string
+	problems := []string{}
 	for _, f := range []string{settings, mcp} {
 		raw, err := os.ReadFile(f)
 		if err != nil {
