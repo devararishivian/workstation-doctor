@@ -18,6 +18,10 @@ linters:
     - revive       # general style rules
     - gocritic     # code improvement opinions
     - modernize    # current Go idioms (go1.21-1.27)
+    - wrapcheck    # external errors must carry context
+    - errorlint    # correct %w usage and error comparisons
+    - rowserrcheck # rows.Err must be checked
+    - nilnil       # no simultaneous nil return values
     - nolintlint   # //nolint must name the linter and give a reason
   settings:
     errcheck:

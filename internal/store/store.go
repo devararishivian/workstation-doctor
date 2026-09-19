@@ -4,6 +4,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -80,13 +81,9 @@ type Store struct {
 	db *sql.DB
 }
 
-// DefaultPath returns the default database location.
-func DefaultPath() string {
-	h, _ := os.UserHomeDir()
-	return filepath.Join(h, ".local", "share", "workstation-doctor", "doctor.db")
-}
-
 // Open opens the database at path and creates it when necessary.
+// A cleanup failure after a setup failure joins the returned error,
+// so no error is silently discarded.
 func Open(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("store: create directory %s: %w", filepath.Dir(path), err)
@@ -96,19 +93,28 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("store: open %s: %w", path, err)
 	}
 	if err := db.Ping(); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("store: ping %s: %w", path, err)
+		pingErr := fmt.Errorf("store: ping %s: %w", path, err)
+		if cerr := db.Close(); cerr != nil {
+			return nil, errors.Join(pingErr, fmt.Errorf("store: close %s: %w", path, cerr))
+		}
+		return nil, pingErr
 	}
 	if _, err := db.Exec(schema); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("store: migrate %s: %w", path, err)
+		migErr := fmt.Errorf("store: migrate %s: %w", path, err)
+		if cerr := db.Close(); cerr != nil {
+			return nil, errors.Join(migErr, fmt.Errorf("store: close %s: %w", path, cerr))
+		}
+		return nil, migErr
 	}
 	return &Store{db: db}, nil
 }
 
 // Close closes the database connection.
 func (s *Store) Close() error {
-	return s.db.Close()
+	if err := s.db.Close(); err != nil {
+		return fmt.Errorf("store: close: %w", err)
+	}
+	return nil
 }
 
 func ts(t time.Time) string {
@@ -166,18 +172,21 @@ func (s *Store) ListRuns(limit int) ([]Run, error) {
 		`SELECT id, started_at, finished_at, n_ok, n_update, n_unknown, exit_code
 		 FROM check_runs ORDER BY id DESC LIMIT ?`, limit)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("store: list runs: %w", err)
 	}
 	defer rows.Close() //nolint:errcheck // close errors need no action after a full read
 	out := []Run{}
 	for rows.Next() {
 		var r Run
 		if err := rows.Scan(&r.ID, &r.StartedAt, &r.FinishedAt, &r.NOk, &r.NUpdate, &r.NUnknown, &r.ExitCode); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("store: scan run: %w", err)
 		}
 		out = append(out, r)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return out, fmt.Errorf("store: iterate runs: %w", err)
+	}
+	return out, nil
 }
 
 // RunResults returns the component results of one run.
@@ -186,18 +195,21 @@ func (s *Store) RunResults(runID int64) ([]ResultRow, error) {
 		`SELECT component, installed, latest, status, note
 		 FROM check_results WHERE run_id=? ORDER BY id`, runID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("store: list results: %w", err)
 	}
 	defer rows.Close() //nolint:errcheck // close errors need no action after a full read
 	out := []ResultRow{}
 	for rows.Next() {
 		var r ResultRow
 		if err := rows.Scan(&r.Component, &r.Installed, &r.Latest, &r.Status, &r.Note); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("store: scan result: %w", err)
 		}
 		out = append(out, r)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return out, fmt.Errorf("store: iterate results: %w", err)
+	}
+	return out, nil
 }
 
 // RunActions returns the actions of one run.
@@ -206,16 +218,19 @@ func (s *Store) RunActions(runID int64) ([]ActionRow, error) {
 		`SELECT id, run_id, kind, command, status, output, started_at, finished_at
 		 FROM actions WHERE run_id=? ORDER BY id`, runID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("store: list actions: %w", err)
 	}
 	defer rows.Close() //nolint:errcheck // close errors need no action after a full read
 	out := []ActionRow{}
 	for rows.Next() {
 		var a ActionRow
 		if err := rows.Scan(&a.ID, &a.RunID, &a.Kind, &a.Command, &a.Status, &a.Output, &a.StartedAt, &a.Finished); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("store: scan action: %w", err)
 		}
 		out = append(out, a)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return out, fmt.Errorf("store: iterate actions: %w", err)
+	}
+	return out, nil
 }

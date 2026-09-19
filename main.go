@@ -6,10 +6,12 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 	"workstation-doctor/internal/doctor"
@@ -25,11 +27,22 @@ import (
 // Version is set at build time when necessary (-ldflags "-X main.version=...").
 var version = "0.1.0"
 
-func dbPath(cmd *cli.Command) string {
-	if v := cmd.String("db"); v != "" {
-		return v
+// defaultDBPath returns the default history database path. It returns
+// an empty string when the home directory cannot be determined, so the
+// flag stays unset and dbPath reports the problem with context.
+func defaultDBPath() string {
+	h, err := os.UserHomeDir()
+	if err != nil {
+		return ""
 	}
-	return store.DefaultPath()
+	return filepath.Join(h, ".local", "share", "workstation-doctor", "doctor.db")
+}
+
+func dbPath(cmd *cli.Command) (string, error) {
+	if v := cmd.String("db"); v != "" {
+		return v, nil
+	}
+	return "", errors.New("cannot determine home directory for the default database path (set --db)")
 }
 
 // openStore opens the database. It returns nil when the database
@@ -54,7 +67,14 @@ func toRows(results []doctor.Result) []store.ResultRow {
 	return rows
 }
 
-func runAndRecord(ctx context.Context, path string) ([]doctor.Result, int64) {
+// runAndRecord runs the checks and stores them as one run. It returns
+// an error only when the database path cannot be determined; a storage
+// failure degrades to a stderr warning so the check results survive.
+func runAndRecord(ctx context.Context, cmd *cli.Command) ([]doctor.Result, int64, error) {
+	path, err := dbPath(cmd)
+	if err != nil {
+		return nil, 0, err
+	}
 	start := time.Now()
 	results := doctor.Run(ctx)
 	s := doctor.Summarize(results)
@@ -67,18 +87,23 @@ func runAndRecord(ctx context.Context, path string) ([]doctor.Result, int64) {
 	var runID int64
 	if st := openStore(path); st != nil {
 		id, err := st.RecordRun(start, time.Now(), s.OK, s.Update, s.Unknown, exit, toRows(results))
-		_ = st.Close()
+		if cerr := st.Close(); cerr != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to close history database (%v)\n", cerr)
+		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to save run (%v)\n", err)
 		} else {
 			runID = id
 		}
 	}
-	return results, runID
+	return results, runID, nil
 }
 
 func doCheck(ctx context.Context, cmd *cli.Command) error {
-	results, runID := runAndRecord(ctx, dbPath(cmd))
+	results, runID, err := runAndRecord(ctx, cmd)
+	if err != nil {
+		return cli.Exit(err.Error(), 2)
+	}
 	doctor.PrintTable(cmd.Root().Writer, results)
 	if runID > 0 {
 		fmt.Fprintf(cmd.Root().Writer, "Saved run: #%d\n", runID)
@@ -95,7 +120,10 @@ func doCheck(ctx context.Context, cmd *cli.Command) error {
 }
 
 func doManual(ctx context.Context, cmd *cli.Command) error {
-	results, runID := runAndRecord(ctx, dbPath(cmd))
+	results, runID, err := runAndRecord(ctx, cmd)
+	if err != nil {
+		return cli.Exit(err.Error(), 2)
+	}
 	doctor.PrintTable(cmd.Root().Writer, results)
 	doctor.PrintManual(cmd.Root().Writer, results)
 	if runID > 0 {
@@ -118,8 +146,14 @@ func askConfirm(prompt string) bool {
 }
 
 func doFix(ctx context.Context, cmd *cli.Command, autoYes bool) error {
-	path := dbPath(cmd)
-	results, runID := runAndRecord(ctx, path)
+	results, runID, err := runAndRecord(ctx, cmd)
+	if err != nil {
+		return cli.Exit(err.Error(), 2)
+	}
+	path, err := dbPath(cmd)
+	if err != nil {
+		return cli.Exit(err.Error(), 2)
+	}
 	w := cmd.Root().Writer
 	doctor.PrintTable(w, results)
 	pending := doctor.Pending(results)
@@ -194,7 +228,11 @@ func lastBytes(s string, n int) string {
 
 func doHistory(_ context.Context, cmd *cli.Command) error {
 	w := cmd.Root().Writer
-	st := openStore(dbPath(cmd))
+	path, err := dbPath(cmd)
+	if err != nil {
+		return cli.Exit(err.Error(), 2)
+	}
+	st := openStore(path)
 	if st == nil {
 		return cli.Exit("history database did not open", 2)
 	}
@@ -269,6 +307,20 @@ func shortTS(ts string) string {
 	return t.Local().Format("2006-01-02 15:04:05")
 }
 
+// menuRun runs a menu selection and reports failures. Exit code 1 only
+// means updates are pending (the table already shows them), so only
+// louder failures reach stderr and the menu stays in its loop.
+func menuRun(err error) {
+	if err == nil {
+		return
+	}
+	var ec cli.ExitCoder
+	if errors.As(err, &ec) && ec.ExitCode() == 1 {
+		return
+	}
+	fmt.Fprintln(os.Stderr, "error:", err)
+}
+
 func interactiveMenu(ctx context.Context, cmd *cli.Command) error {
 	in := bufio.NewScanner(os.Stdin)
 	for {
@@ -284,13 +336,13 @@ func interactiveMenu(ctx context.Context, cmd *cli.Command) error {
 		}
 		switch strings.TrimSpace(in.Text()) {
 		case "1":
-			_ = doCheck(ctx, cmd)
+			menuRun(doCheck(ctx, cmd))
 		case "2":
-			_ = doManual(ctx, cmd)
+			menuRun(doManual(ctx, cmd))
 		case "3":
-			_ = doFix(ctx, cmd, false)
+			menuRun(doFix(ctx, cmd, false))
 		case "4":
-			_ = doHistory(ctx, cmd)
+			menuRun(doHistory(ctx, cmd))
 		case "0", "q", "quit", "exit":
 			return nil
 		default:
@@ -308,7 +360,7 @@ func main() {
 			&cli.StringFlag{
 				Name:  "db",
 				Usage: "SQLite history database file path",
-				Value: store.DefaultPath(),
+				Value: defaultDBPath(),
 			},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {

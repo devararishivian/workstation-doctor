@@ -6,6 +6,7 @@ package doctor
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -72,23 +73,41 @@ func Pending(results []Result) []Result {
 	return out
 }
 
-func home() string {
-	h, _ := os.UserHomeDir()
-	return h
+// userHome returns the user home directory or an error when the
+// operating system cannot determine it.
+func userHome() (string, error) {
+	h, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("cannot determine home directory: %w", err)
+	}
+	return h, nil
 }
 
-// execOut runs a command with a timeout and returns stdout.
-// A non-zero exit code is not fatal (for example `npm outdated`
-// exits with 1 when packages are outdated). The output is still used.
-func execOut(ctx context.Context, timeout time.Duration, dir, name string, args ...string) string {
+// execOut runs a command with a timeout and returns trimmed stdout.
+// A non-zero exit that still produces stdout is usable output
+// (for example `npm outdated` exits with 1 when packages are outdated).
+// An execution failure without usable stdout returns an error.
+func execOut(ctx context.Context, timeout time.Duration, dir, name string, args ...string) (string, error) {
 	c, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	cmd := exec.CommandContext(c, name, args...)
 	if dir != "" {
 		cmd.Dir = dir
 	}
-	out, _ := cmd.Output()
-	return strings.TrimSpace(string(out))
+	out, err := cmd.Output()
+	trimmed := strings.TrimSpace(string(out))
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && trimmed != "" {
+			return trimmed, nil
+		}
+		return "", fmt.Errorf("cannot run %s: %w", commandLine(name, args), err)
+	}
+	return trimmed, nil
+}
+
+func commandLine(name string, args []string) string {
+	return strings.TrimSpace(strings.Join(append([]string{name}, args...), " "))
 }
 
 func commandExists(name string) bool {
@@ -170,39 +189,42 @@ func unknown(component, installed, latest, note string) Result {
 	return Result{Component: component, Installed: installed, Latest: latest, Status: StatusUnknown, Note: note}
 }
 
-func npmLatest(ctx context.Context, pkg string) string {
+func npmLatest(ctx context.Context, pkg string) (string, error) {
 	return execOut(ctx, 30*time.Second, "", "npm", "view", pkg, "version")
 }
 
-func npmGlobalInstalled(ctx context.Context, pkg string) string {
-	out := execOut(ctx, 30*time.Second, "", "npm", "list", "-g", "--depth=0", "--json")
+func npmGlobalInstalled(ctx context.Context, pkg string) (string, error) {
+	out, err := execOut(ctx, 30*time.Second, "", "npm", "list", "-g", "--depth=0", "--json")
+	if err != nil {
+		return "", err
+	}
 	var v struct {
 		Dependencies map[string]struct {
 			Version string `json:"version"`
 		} `json:"dependencies"`
 	}
-	if json.Unmarshal([]byte(out), &v) != nil {
-		return ""
+	if err := json.Unmarshal([]byte(out), &v); err != nil {
+		return "", fmt.Errorf("cannot parse npm list output: %w", err)
 	}
-	return v.Dependencies[pkg].Version
+	return v.Dependencies[pkg].Version, nil
 }
 
 func checkPi(ctx context.Context) Result {
 	if !commandExists("pi") {
 		return unknown("pi", "-", "-", "pi binary is not in PATH")
 	}
-	inst := execOut(ctx, 15*time.Second, "", "pi", "--version")
-	if inst == "" {
+	inst, err := execOut(ctx, 15*time.Second, "", "pi", "--version")
+	if err != nil || inst == "" {
 		return unknown("pi", "-", "-", "cannot read pi --version")
 	}
-	latest := npmLatest(ctx, "@earendil-works/pi-coding-agent")
-	if latest == "" {
+	latest, err := npmLatest(ctx, "@earendil-works/pi-coding-agent")
+	if err != nil || latest == "" {
 		return unknown("pi", inst, "-", "cannot read npm registry (offline?)")
 	}
 	if inst == latest {
 		return ok("pi", inst, latest, "npm")
 	}
-	pkg := fmt.Sprintf("@earendil-works/pi-coding-agent@%s", latest)
+	pkg := "@earendil-works/pi-coding-agent@" + latest
 	cmd := "npm i -g " + pkg
 	return needUpdate("pi", inst, latest, cmd, cmd, "npm package is outdated")
 }
@@ -211,7 +233,10 @@ func checkHerdr(ctx context.Context) Result {
 	if !commandExists("herdr") {
 		return unknown("herdr", "-", "-", "herdr binary is not in PATH")
 	}
-	out := execOut(ctx, 15*time.Second, "", "herdr", "--version")
+	out, err := execOut(ctx, 15*time.Second, "", "herdr", "--version")
+	if err != nil {
+		return unknown("herdr", "-", "-", "cannot read herdr --version")
+	}
 	inst := ""
 	if f := strings.Fields(out); len(f) >= 2 {
 		inst = f[1]
@@ -219,7 +244,10 @@ func checkHerdr(ctx context.Context) Result {
 	if inst == "" {
 		return unknown("herdr", "-", "-", "cannot read herdr --version")
 	}
-	info := execOut(ctx, 60*time.Second, "", "brew", "info", "--json=v2", "herdr")
+	info, err := execOut(ctx, 60*time.Second, "", "brew", "info", "--json=v2", "herdr")
+	if err != nil {
+		return unknown("herdr", inst, "-", "cannot read brew info (offline?)")
+	}
 	var v struct {
 		Formulae []struct {
 			Versions struct {
@@ -246,7 +274,10 @@ func checkGhostty(ctx context.Context) Result {
 	if _, err := os.Stat(ghosttyBin); err != nil {
 		return unknown("ghostty", "-", "-", "Ghostty.app was not found")
 	}
-	out := execOut(ctx, 15*time.Second, "", ghosttyBin, "--version")
+	out, err := execOut(ctx, 15*time.Second, "", ghosttyBin, "--version")
+	if err != nil {
+		return unknown("ghostty", "-", "-", "cannot read ghostty --version")
+	}
 	inst := ""
 	if line, _, _ := strings.Cut(out, "\n"); line != "" {
 		if f := strings.Fields(line); len(f) >= 2 {
@@ -256,7 +287,10 @@ func checkGhostty(ctx context.Context) Result {
 	if inst == "" {
 		return unknown("ghostty", "-", "-", "cannot read ghostty --version")
 	}
-	info := execOut(ctx, 60*time.Second, "", "brew", "info", "--cask", "--json=v2", "ghostty")
+	info, err := execOut(ctx, 60*time.Second, "", "brew", "info", "--cask", "--json=v2", "ghostty")
+	if err != nil {
+		return unknown("ghostty", inst, "-", "cannot read brew cask info (offline?)")
+	}
 	var v struct {
 		Casks []struct {
 			Version string `json:"version"`
@@ -280,12 +314,15 @@ func checkNpmPkg(ctx context.Context, label, pkg string) Result {
 	if !commandExists("npm") {
 		return unknown(label, "-", "-", "npm is not in PATH")
 	}
-	inst := npmGlobalInstalled(ctx, pkg)
-	if inst == "" {
-		return unknown(label, "-", "-", "global npm package was not found / npm error")
+	inst, err := npmGlobalInstalled(ctx, pkg)
+	if err != nil {
+		return unknown(label, "-", "-", "cannot run npm list")
 	}
-	latest := npmLatest(ctx, pkg)
-	if latest == "" {
+	if inst == "" {
+		return unknown(label, "-", "-", "global npm package was not found")
+	}
+	latest, err := npmLatest(ctx, pkg)
+	if err != nil || latest == "" {
 		return unknown(label, inst, "-", "cannot read latest version (offline?)")
 	}
 	if inst == latest {
@@ -299,7 +336,10 @@ func checkSerena(ctx context.Context) Result {
 	if !commandExists("serena") {
 		return unknown("serena", "-", "-", "serena binary is not in PATH")
 	}
-	out := execOut(ctx, 15*time.Second, "", "serena", "--version")
+	out, err := execOut(ctx, 15*time.Second, "", "serena", "--version")
+	if err != nil {
+		return unknown("serena", "-", "-", "cannot read serena --version")
+	}
 	inst := ""
 	if f := strings.Fields(out); len(f) >= 2 {
 		inst = f[1]
@@ -307,8 +347,8 @@ func checkSerena(ctx context.Context) Result {
 	if inst == "" {
 		return unknown("serena", "-", "-", "cannot read serena --version")
 	}
-	latest := pypiLatest(ctx, "serena-agent")
-	if latest == "" {
+	latest, err := pypiLatest(ctx, "serena-agent")
+	if err != nil || latest == "" {
 		return unknown("serena", inst, "-", "cannot read PyPI (offline?)")
 	}
 	if inst == latest {
@@ -318,34 +358,40 @@ func checkSerena(ctx context.Context) Result {
 		"uv tool upgrade serena-agent", "uv tool upgrade serena-agent", "uv tool is outdated")
 }
 
-func pypiLatest(ctx context.Context, pkg string) string {
+func pypiLatest(ctx context.Context, pkg string) (string, error) {
 	c, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(c, "GET", "https://pypi.org/pypi/"+pkg+"/json", nil)
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("cannot build PyPI request: %w", err)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("cannot reach PyPI: %w", err)
 	}
 	defer resp.Body.Close() //nolint:errcheck // close errors need no action on a read path
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("PyPI returned status %s", resp.Status)
+	}
 	var v struct {
 		Info struct {
 			Version string `json:"version"`
 		} `json:"info"`
 	}
-	if json.NewDecoder(resp.Body).Decode(&v) != nil {
-		return ""
+	if err := json.NewDecoder(resp.Body).Decode(&v); err != nil {
+		return "", fmt.Errorf("cannot parse PyPI response: %w", err)
 	}
-	return v.Info.Version
+	return v.Info.Version, nil
 }
 
 func checkGortex(ctx context.Context) Result {
 	if !commandExists("gortex") {
 		return unknown("gortex", "-", "-", "gortex binary is not in PATH")
 	}
-	out := execOut(ctx, 15*time.Second, "", "gortex", "version")
+	out, err := execOut(ctx, 15*time.Second, "", "gortex", "version")
+	if err != nil {
+		return unknown("gortex", "-", "-", "cannot read gortex version")
+	}
 	inst := ""
 	if line, _, _ := strings.Cut(out, "\n"); line != "" {
 		if f := strings.Fields(line); len(f) >= 2 {
@@ -360,7 +406,10 @@ func checkGortex(ctx context.Context) Result {
 	c, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(c, "gortex", "upgrade")
-	upOut, _ := cmd.CombinedOutput()
+	upOut, err := cmd.CombinedOutput()
+	if err != nil {
+		return unknown("gortex", inst, "-", "cannot run gortex upgrade")
+	}
 	if strings.Contains(strings.ToLower(string(upOut)), "already the latest") {
 		return ok("gortex", inst, inst, "self-update: latest")
 	}
@@ -373,34 +422,43 @@ func checkBrewOutdated(ctx context.Context) Result {
 	if !commandExists("brew") {
 		return unknown("brew-outdated", "-", "-", "brew is not installed")
 	}
-	out := execOut(ctx, 120*time.Second, "", "brew", "outdated")
+	out, err := execOut(ctx, 120*time.Second, "", "brew", "outdated")
+	if err != nil {
+		return unknown("brew-outdated", "-", "-", "cannot run brew outdated")
+	}
 	if strings.TrimSpace(out) == "" {
 		return ok("brew-outdated", "0", "0", "all formulae and casks are current")
 	}
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	names := strings.Join(lines, " ")
-	return needUpdate("brew-outdated", fmt.Sprintf("%d paket", len(lines)), "-",
+	return needUpdate("brew-outdated", fmt.Sprintf("%d packages", len(lines)), "-",
 		"brew upgrade # outdated: "+names, "brew upgrade",
 		"outdated: "+names)
 }
 
-func npmOutdatedKeys(ctx context.Context, dir string) string {
-	out := execOut(ctx, 60*time.Second, dir, "npm", "outdated", "--json")
+func npmOutdatedKeys(ctx context.Context, dir string) (string, error) {
+	out, err := execOut(ctx, 60*time.Second, dir, "npm", "outdated", "--json")
+	if err != nil {
+		return "", err
+	}
 	if strings.TrimSpace(out) == "" {
-		return ""
+		return "", nil
 	}
 	var v map[string]any
-	if json.Unmarshal([]byte(out), &v) != nil {
-		return ""
+	if err := json.Unmarshal([]byte(out), &v); err != nil {
+		return "", fmt.Errorf("cannot parse npm outdated output: %w", err)
 	}
-	return strings.Join(slices.Sorted(maps.Keys(v)), " ")
+	return strings.Join(slices.Sorted(maps.Keys(v)), " "), nil
 }
 
 func checkNpmOutdatedGlobal(ctx context.Context) Result {
 	if !commandExists("npm") {
 		return unknown("npm-outdated-g", "-", "-", "npm is not installed")
 	}
-	list := npmOutdatedKeys(ctx, "")
+	list, err := npmOutdatedKeys(ctx, "")
+	if err != nil {
+		return unknown("npm-outdated-g", "-", "-", "cannot run npm outdated")
+	}
 	if list == "" {
 		return ok("npm-outdated-g", "0", "0", "all global packages are current")
 	}
@@ -410,11 +468,18 @@ func checkNpmOutdatedGlobal(ctx context.Context) Result {
 }
 
 func checkPiPackages(ctx context.Context) Result {
-	dir := filepath.Join(home(), ".pi", "agent", "npm")
+	h, err := userHome()
+	if err != nil {
+		return unknown("pi-packages", "-", "-", "cannot determine home directory")
+	}
+	dir := filepath.Join(h, ".pi", "agent", "npm")
 	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
 		return unknown("pi-packages", "-", "-", dir+" is missing")
 	}
-	list := npmOutdatedKeys(ctx, dir)
+	list, err := npmOutdatedKeys(ctx, dir)
+	if err != nil {
+		return unknown("pi-packages", "-", "-", "cannot run npm outdated")
+	}
 	if list == "" {
 		return ok("pi-packages", "0", "0", "~/.pi/agent/npm is current")
 	}
@@ -425,22 +490,33 @@ func checkPiPackages(ctx context.Context) Result {
 }
 
 func checkSuperpowers(ctx context.Context) Result {
-	dir := filepath.Join(home(), ".pi", "agent", "git", "github.com", "obra", "superpowers")
+	h, err := userHome()
+	if err != nil {
+		return unknown("superpowers", "-", "-", "cannot determine home directory")
+	}
+	dir := filepath.Join(h, ".pi", "agent", "git", "github.com", "obra", "superpowers")
 	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
 		return unknown("superpowers", "-", "-", "repo was not found")
 	}
-	local := execOut(ctx, 15*time.Second, dir, "git", "rev-parse", "HEAD")
-	if local == "" {
+	local, err := execOut(ctx, 15*time.Second, dir, "git", "rev-parse", "HEAD")
+	if err != nil || local == "" {
 		return unknown("superpowers", "-", "-", "cannot read git HEAD")
 	}
+	remoteOut, err := execOut(ctx, 30*time.Second, dir, "git", "ls-remote", "origin", "main")
+	if err != nil {
+		return unknown("superpowers", shortSHA(local), "-", "cannot reach origin (offline?)")
+	}
 	remote := ""
-	if f := strings.Fields(execOut(ctx, 30*time.Second, dir, "git", "ls-remote", "origin", "main")); len(f) > 0 {
+	if f := strings.Fields(remoteOut); len(f) > 0 {
 		remote = f[0]
 	}
 	if remote == "" {
 		return unknown("superpowers", shortSHA(local), "-", "cannot reach origin (offline?)")
 	}
-	dirty := execOut(ctx, 15*time.Second, dir, "git", "status", "-uno", "--porcelain=v1")
+	dirty, err := execOut(ctx, 15*time.Second, dir, "git", "status", "-uno", "--porcelain=v1")
+	if err != nil {
+		return unknown("superpowers", shortSHA(local), "-", "cannot read git status")
+	}
 	note := "main is in sync with origin"
 	if dirty != "" {
 		first, _, _ := strings.Cut(dirty, "\n")
@@ -466,8 +542,8 @@ func checkHerdrIntegrations(ctx context.Context) Result {
 	if !commandExists("herdr") {
 		return unknown("herdr-integr", "-", "-", "herdr is not installed")
 	}
-	out := execOut(ctx, 30*time.Second, "", "herdr", "integration", "status")
-	if strings.TrimSpace(out) == "" {
+	out, err := execOut(ctx, 30*time.Second, "", "herdr", "integration", "status")
+	if err != nil || strings.TrimSpace(out) == "" {
 		return unknown("herdr-integr", "-", "-", "cannot read integration status")
 	}
 	need := []string{}
@@ -507,7 +583,10 @@ func checkGhosttyConfig(ctx context.Context) Result {
 }
 
 func checkPiConfig(_ context.Context) Result {
-	h := home()
+	h, err := userHome()
+	if err != nil {
+		return unknown("pi-config", "-", "-", "cannot determine home directory")
+	}
 	settings := filepath.Join(h, ".pi", "agent", "settings.json")
 	mcp := filepath.Join(h, ".pi", "agent", "mcp.json")
 	cache := filepath.Join(h, ".pi", "agent", "mcp-cache.json")
@@ -530,11 +609,16 @@ func checkPiConfig(_ context.Context) Result {
 		return unknown("pi-config", "check", "-", "configuration problem: "+strings.Join(problems, "; "))
 	}
 	// Count the servers without ever printing the content (it can contain secrets).
-	raw, _ := os.ReadFile(mcp)
+	raw, err := os.ReadFile(mcp)
+	if err != nil {
+		return unknown("pi-config", "check", "-", "configuration problem: mcp.json is unreadable")
+	}
 	var v struct {
 		MCPServers map[string]any `json:"mcpServers"`
 	}
-	_ = json.Unmarshal(raw, &v)
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return unknown("pi-config", "check", "-", "configuration problem: mcp.json is unreadable")
+	}
 	return ok("pi-config", "valid", "valid",
 		fmt.Sprintf("%d MCP servers, cache is present", len(v.MCPServers)))
 }
@@ -542,12 +626,16 @@ func checkPiConfig(_ context.Context) Result {
 var skillDescRe = regexp.MustCompile(`(?ms)^description:\s*(.+?)\s*$`)
 
 func checkSkills(_ context.Context) Result {
-	root := filepath.Join(home(), ".agents", "skills")
+	h, err := userHome()
+	if err != nil {
+		return unknown("skills", "-", "-", "cannot determine home directory")
+	}
+	root := filepath.Join(h, ".agents", "skills")
 	if st, err := os.Stat(root); err != nil || !st.IsDir() {
 		return unknown("skills", "-", "-", root+" is missing")
 	}
 	total, bad := 0, []string{}
-	_ = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+	walkErr := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || d.Name() != "SKILL.md" {
 			return nil
 		}
@@ -566,11 +654,17 @@ func checkSkills(_ context.Context) Result {
 		}
 		desc := strings.Join(strings.Fields(strings.Trim(m[1], `"'`)), " ")
 		if utf8.RuneCountInString(desc) > 1024 {
-			rel, _ := filepath.Rel(root, p)
+			rel := p
+			if r, err := filepath.Rel(root, p); err == nil {
+				rel = r
+			}
 			bad = append(bad, rel)
 		}
 		return nil
 	})
+	if walkErr != nil {
+		return unknown("skills", "-", "-", "cannot scan skills directory")
+	}
 	if total == 0 {
 		return unknown("skills", "-", "-", "no SKILL.md files were found")
 	}
