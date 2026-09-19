@@ -1,2 +1,5 @@
 .DS_Store
 *.log
+# binary hasil build + database lokal
+/workstation-doctor
+*.db
