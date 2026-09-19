@@ -54,7 +54,6 @@ func toRows(results []doctor.Result) []store.ResultRow {
 	return rows
 }
 
-// runAndRecord menjalankan cek dan menyimpannya sebagai satu run.
 func runAndRecord(ctx context.Context, path string) ([]doctor.Result, int64) {
 	start := time.Now()
 	results := doctor.Run(ctx)

@@ -87,9 +87,6 @@ func execOut(ctx context.Context, timeout time.Duration, dir, name string, args 
 	if dir != "" {
 		cmd.Dir = dir
 	}
-	// Exit non-nol bermakna di sini (mis. npm outdated exit 1
-	// saat ada paket tertinggal) sehingga error sengaja diabaikan
-	// dan stdout tetap dipakai.
 	out, _ := cmd.Output()
 	return strings.TrimSpace(string(out))
 }
@@ -443,7 +440,6 @@ func checkSuperpowers(ctx context.Context) Result {
 	if remote == "" {
 		return unknown("superpowers", shortSHA(local), "-", "gagal hubungi origin (offline?)")
 	}
-	// Status file lokal sebagai info tambahan (read-only).
 	dirty := execOut(ctx, 15*time.Second, dir, "git", "status", "-uno", "--porcelain=v1")
 	note := "main sinkron origin"
 	if dirty != "" {

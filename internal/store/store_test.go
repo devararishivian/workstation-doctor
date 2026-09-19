@@ -4,8 +4,6 @@ import (
 	"testing"
 	"time"
 
-	// Driver diregistrasi di paket test (root dependensi),
-	// bukan di kode library.
 	_ "modernc.org/sqlite"
 )
 

@@ -10,8 +10,6 @@ import (
 	"time"
 )
 
-// Schema versi 1: satu run pengecekan memiliki banyak hasil komponen,
-// dan banyak aksi perbaikan.
 const schema = `
 CREATE TABLE IF NOT EXISTS check_runs(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
