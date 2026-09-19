@@ -1,6 +1,6 @@
-// Command workstation-doctor mengaudit komponen workstation
-// (Pi, Herdr, Ghostty, MCP, skills) dan menyimpan riwayat
-// pengecekan serta aksi ke SQLite embedded.
+// Command workstation-doctor audits workstation components
+// (Pi, Herdr, Ghostty, MCP, skills) and stores the history
+// of checks and actions in embedded SQLite.
 package main
 
 import (
@@ -17,12 +17,12 @@ import (
 
 	"github.com/urfave/cli/v3"
 
-	// Driver SQLite diregistrasi di root aplikasi agar side effect
-	// init() terlihat di sini, bukan tersembunyi di library.
+	// The SQLite driver registers at the application root so the
+	// init() side effect stays visible here, not hidden in a library.
 	_ "modernc.org/sqlite"
 )
 
-// Version diisi saat build bila perlu (-ldflags "-X main.version=...").
+// Version is set at build time when necessary (-ldflags "-X main.version=...").
 var version = "0.1.0"
 
 func dbPath(cmd *cli.Command) string {
@@ -32,8 +32,8 @@ func dbPath(cmd *cli.Command) string {
 	return store.DefaultPath()
 }
 
-// openStore membuka DB; bila gagal, kembalikan nil agar cek tetap jalan
-// tanpa persistensi (mode degradasi).
+// openStore opens the database. It returns nil when the database
+// does not open, so checks still run without history (degraded mode).
 func openStore(path string) *store.Store {
 	st, err := store.Open(path)
 	if err != nil {
@@ -137,7 +137,7 @@ func doFix(ctx context.Context, cmd *cli.Command, autoYes bool) error {
 	}
 	st := openStore(path)
 	if st != nil {
-		defer st.Close() //nolint:errcheck // tutup DB best-effort saat command selesai
+		defer st.Close() //nolint:errcheck // close errors need no action when a command ends
 	}
 	fail := 0
 	for _, r := range pending {
@@ -198,12 +198,12 @@ func doHistory(_ context.Context, cmd *cli.Command) error {
 	if st == nil {
 		return cli.Exit("database riwayat tidak dapat dibuka", 2)
 	}
-	defer st.Close() //nolint:errcheck // tutup DB best-effort saat command selesai
+	defer st.Close() //nolint:errcheck // close errors need no action when a command ends
 	if id := cmd.Int64("run"); id > 0 {
 		return showRun(w, st, id)
 	}
-	// Flag --limit/--run hanya terdefinisi di subcommand history;
-	// bila dipanggil dari menu interaktif (konteks root) nilainya nol.
+	// Flags --limit and --run exist only on the history subcommand.
+	// They read as zero from the interactive menu (root context).
 	limit := cmd.Int("limit")
 	if limit <= 0 {
 		limit = 10

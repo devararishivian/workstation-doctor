@@ -12,7 +12,7 @@ func TestRecordAndListRuns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer st.Close() //nolint:errcheck // tutup DB test best-effort
+	defer st.Close() //nolint:errcheck // close errors need no action in a test
 
 	start := time.Now()
 	id, err := st.RecordRun(start, start.Add(time.Second), 14, 1, 0, 1, []ResultRow{

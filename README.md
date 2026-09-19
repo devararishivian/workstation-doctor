@@ -1,50 +1,51 @@
 # workstation-doctor
 
-CLI audit untuk workstation Pi / Herdr / Ghostty / MCP / skills, dengan riwayat pengecekan dan aksi di SQLite embedded.
+workstation-doctor audits a developer workstation. It checks Pi, Herdr, Ghostty, MCP servers, and agent skills. It compares installed versions against the latest versions. It stores each check and each fix action in the embedded SQLite database.
 
-Stack: **Go 1.27** + `github.com/urfave/cli/v3` + `modernc.org/sqlite` (pure-Go, tanpa cgo). Tanpa GUI, tanpa dependensi
-runtime baru.
+The stack is Go 1.27 with `github.com/urfave/cli/v3` and `modernc.org/sqlite`. The SQLite driver is pure Go, so the build needs no C compiler. There is no GUI and no new runtime dependency.
 
-## Build & pakai
+## Build and use
+
+Build the binary once, then run a command:
 
 ```sh
 go build -o workstation-doctor .
-./workstation-doctor                 # menu interaktif
-./workstation-doctor check           # 1. pengecekan read-only + simpan run
-./workstation-doctor manual          # 2. langkah manual berurutan
-./workstation-doctor fix             # 3. perbaikan otomatis (minta konfirmasi)
-./workstation-doctor fix --yes       # otomatis tanpa konfirmasi
-./workstation-doctor history         # riwayat run
-./workstation-doctor history --run 3 # detail satu run + aksinya
-./workstation-doctor --db /tmp/x.db check  # DB kustom
+./workstation-doctor                     # interactive menu
+./workstation-doctor check               # read-only check and save the run
+./workstation-doctor manual              # ordered manual steps
+./workstation-doctor fix                 # automatic fix with confirmation
+./workstation-doctor fix --yes           # automatic fix without confirmation
+./workstation-doctor history             # run history
+./workstation-doctor history --run 3     # detail of one run and its actions
+./workstation-doctor --db /tmp/x.db check  # custom database
 ```
 
-Exit code: `0` semua OK, `1` ada yang perlu update / aksi gagal, `2` ada cek UNKNOWN / DB tidak dapat dibuka.
+Exit code 0 means all components are current. Exit code 1 means an update is pending or a fix action failed. Exit code 2 means a check returned UNKNOWN or the database did not open.
 
-## Cakupan cek
+## What it checks
 
-Versi terpasang vs terbaru: Pi, Herdr, Ghostty, opencode-ai, tokenjuice, serena-agent, gortex. Status kolektif:
-`brew outdated`, `npm outdated -g`, paket `~/.pi/agent/npm`, git superpowers (`ls-remote`, read-only),
-`herdr integration status`, validasi config Ghostty, validasi `settings.json` / `mcp.json` + cache MCP, dan audit batas
-deskripsi skill 1024 char.
+workstation-doctor compares the installed version against the latest version for each tool: Pi, Herdr, Ghostty, opencode-ai, tokenjuice, serena-agent, and gortex. It also reports collective status from `brew outdated` and `npm outdated -g`. It checks the packages in `~/.pi/agent/npm` and the superpowers repo with read-only `git ls-remote`. It reads `herdr integration status`. It validates the Ghostty configuration, the files `settings.json` and `mcp.json` with the MCP cache, and the skill description limit of 1024 characters.
 
-`check` tidak mengubah sistem. Satu-satunya akses jaringan adalah membaca versi terbaru (npm registry, brew info, PyPI,
-git ls-remote). Isi `mcp.json` tidak pernah dicetak (mungkin berisi secret).
+## Network and secrets
 
-## Database riwayat
+The `check` command does not change the system. It uses the network only to read the latest versions (npm registry, brew info, PyPI, git ls-remote). It never prints the content of `mcp.json` because the file can contain secrets.
 
-Bawaan: `~/.local/share/workstation-doctor/doctor.db` (flag `--db` untuk override). Skema v1:
+## History database
 
-- `check_runs` — satu baris per eksekusi (waktu, ringkasan OK/UPDATE/UNKNOWN, exit code)
-- `check_results` — hasil per komponen per run
-- `actions` — tiap perintah `fix` yang dijalankan (perintah, status ok/fail, output, waktu)
+The default database is `~/.local/share/workstation-doctor/doctor.db`. You can override it with the `--db` flag. The schema has three tables:
 
-Bila DB tidak dapat dibuka, tool tetap jalan tanpa persistensi (peringatan ke stderr).
+- Table `check_runs` stores one row per run with time, summary, and exit code.
+- Table `check_results` stores one result row per component per run.
+- Table `actions` stores one row per executed `fix` command with command, status, output, and time.
 
-## Test & lint
+If the database does not open, the tool still runs without history. It writes a warning to stderr.
+
+## Test and lint
+
+Run these commands before each commit:
 
 ```sh
 go vet ./... && go test ./...
-golangci-lint run ./...       # harus 0 issues (config: .golangci.yml)
-golangci-lint run --fix ./... # perbaiki otomatis yang bisa
+golangci-lint run ./...       # expect 0 issues (configuration: .golangci.yml)
+golangci-lint run --fix ./... # fix automatically what the tool can fix
 ```

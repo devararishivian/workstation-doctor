@@ -1,5 +1,5 @@
-// Package store menyimpan riwayat pengecekan, pembaruan, dan aksi
-// ke SQLite embedded (driver pure-Go, tanpa cgo).
+// Package store keeps the history of checks, updates, and actions
+// in an embedded SQLite database.
 package store
 
 import (
@@ -43,7 +43,7 @@ CREATE INDEX IF NOT EXISTS idx_results_run ON check_results(run_id);
 CREATE INDEX IF NOT EXISTS idx_actions_run ON actions(run_id);
 `
 
-// Run adalah satu baris riwayat pengecekan.
+// Run is one row of check history.
 type Run struct {
 	ID         int64
 	StartedAt  string
@@ -54,7 +54,7 @@ type Run struct {
 	ExitCode   int
 }
 
-// ResultRow adalah satu hasil komponen dalam satu run.
+// ResultRow is one component result in one run.
 type ResultRow struct {
 	Component string
 	Installed string
@@ -63,7 +63,7 @@ type ResultRow struct {
 	Note      string
 }
 
-// ActionRow adalah satu aksi perbaikan yang tercatat.
+// ActionRow is one recorded fix action.
 type ActionRow struct {
 	ID        int64
 	RunID     int64
@@ -75,18 +75,18 @@ type ActionRow struct {
 	Finished  string
 }
 
-// Store membungkus koneksi database.
+// Store wraps the database connection.
 type Store struct {
 	db *sql.DB
 }
 
-// DefaultPath mengembalikan lokasi DB bawaan.
+// DefaultPath returns the default database location.
 func DefaultPath() string {
 	h, _ := os.UserHomeDir()
 	return filepath.Join(h, ".local", "share", "workstation-doctor", "doctor.db")
 }
 
-// Open membuka (dan membuat bila perlu) database di path.
+// Open opens the database at path and creates it when necessary.
 func Open(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return nil, fmt.Errorf("store: siapkan direktori %s: %w", filepath.Dir(path), err)
@@ -106,7 +106,7 @@ func Open(path string) (*Store, error) {
 	return &Store{db: db}, nil
 }
 
-// Close menutup koneksi database.
+// Close closes the database connection.
 func (s *Store) Close() error {
 	return s.db.Close()
 }
@@ -115,14 +115,13 @@ func ts(t time.Time) string {
 	return t.UTC().Format(time.RFC3339)
 }
 
-// RecordRun menyimpan satu run pengecekan beserta hasilnya,
-// mengembalikan ID run.
+// RecordRun stores one check run with its results and returns the run ID.
 func (s *Store) RecordRun(start, end time.Time, nOk, nUpdate, nUnknown, exitCode int, results []ResultRow) (int64, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return 0, fmt.Errorf("store: mulai transaksi run: %w", err)
 	}
-	// Rollback best-effort; Commit yang menentukan hasil akhir.
+	// Rollback is best effort. Commit decides the final result.
 	defer func() { _ = tx.Rollback() }()
 	res, err := tx.Exec(
 		`INSERT INTO check_runs(started_at, finished_at, n_ok, n_update, n_unknown, exit_code)
@@ -149,7 +148,7 @@ func (s *Store) RecordRun(start, end time.Time, nOk, nUpdate, nUnknown, exitCode
 	return runID, nil
 }
 
-// RecordAction mencatat satu aksi (mis. perintah fix) ke riwayat.
+// RecordAction records one action (for example a fix command) in the history.
 func (s *Store) RecordAction(runID int64, kind, command, status, output string, start, end time.Time) error {
 	_, err := s.db.Exec(
 		`INSERT INTO actions(run_id, kind, command, status, output, started_at, finished_at)
@@ -161,7 +160,7 @@ func (s *Store) RecordAction(runID int64, kind, command, status, output string, 
 	return nil
 }
 
-// ListRuns mengembalikan N run terbaru (terbaru dulu).
+// ListRuns returns the newest N runs (newest first).
 func (s *Store) ListRuns(limit int) ([]Run, error) {
 	rows, err := s.db.Query(
 		`SELECT id, started_at, finished_at, n_ok, n_update, n_unknown, exit_code
@@ -169,7 +168,7 @@ func (s *Store) ListRuns(limit int) ([]Run, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // rows close best-effort setelah query selesai dibaca
+	defer rows.Close() //nolint:errcheck // close errors need no action after a full read
 	out := []Run{}
 	for rows.Next() {
 		var r Run
@@ -181,7 +180,7 @@ func (s *Store) ListRuns(limit int) ([]Run, error) {
 	return out, rows.Err()
 }
 
-// RunResults mengembalikan hasil komponen untuk satu run.
+// RunResults returns the component results of one run.
 func (s *Store) RunResults(runID int64) ([]ResultRow, error) {
 	rows, err := s.db.Query(
 		`SELECT component, installed, latest, status, note
@@ -189,7 +188,7 @@ func (s *Store) RunResults(runID int64) ([]ResultRow, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // rows close best-effort setelah query selesai dibaca
+	defer rows.Close() //nolint:errcheck // close errors need no action after a full read
 	out := []ResultRow{}
 	for rows.Next() {
 		var r ResultRow
@@ -201,7 +200,7 @@ func (s *Store) RunResults(runID int64) ([]ResultRow, error) {
 	return out, rows.Err()
 }
 
-// RunActions mengembalikan aksi untuk satu run.
+// RunActions returns the actions of one run.
 func (s *Store) RunActions(runID int64) ([]ActionRow, error) {
 	rows, err := s.db.Query(
 		`SELECT id, run_id, kind, command, status, output, started_at, finished_at
@@ -209,7 +208,7 @@ func (s *Store) RunActions(runID int64) ([]ActionRow, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close() //nolint:errcheck // rows close best-effort setelah query selesai dibaca
+	defer rows.Close() //nolint:errcheck // close errors need no action after a full read
 	out := []ActionRow{}
 	for rows.Next() {
 		var a ActionRow

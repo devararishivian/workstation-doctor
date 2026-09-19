@@ -1,6 +1,6 @@
-// Package doctor menjalankan pengecekan read-only atas komponen
-// workstation (Pi, Herdr, Ghostty, paket npm/uv, config, skills)
-// dan melaporkan versi terpasang vs versi terbaru.
+// Package doctor runs read-only checks on workstation components
+// (Pi, Herdr, Ghostty, npm/uv packages, configuration, skills)
+// and reports installed versions against latest versions.
 package doctor
 
 import (
@@ -20,32 +20,32 @@ import (
 	"unicode/utf8"
 )
 
-// Status hasil satu komponen.
+// Status of one component.
 const (
 	StatusOK      = "OK"
 	StatusUpdate  = "UPDATE"
 	StatusUnknown = "UNKNOWN"
 )
 
-// Result adalah hasil pengecekan satu komponen.
+// Result is the check result of one component.
 type Result struct {
 	Component string
 	Installed string
 	Latest    string
 	Status    string
 	Note      string
-	// Manual adalah langkah manual siap copy-paste (hanya bila UPDATE).
+	// Manual is a manual step ready to copy and paste (only for UPDATE).
 	Manual string
-	// Fix adalah perintah yang dijalankan mode otomatis (hanya bila UPDATE).
+	// Fix is the command that automatic mode runs (only for UPDATE).
 	Fix string
 }
 
-// Summary menghitung jumlah tiap status.
+// Summary counts each status.
 type Summary struct {
 	OK, Update, Unknown int
 }
 
-// Summarize menghitung ringkasan dari daftar hasil.
+// Summarize counts the results by status.
 func Summarize(results []Result) Summary {
 	var s Summary
 	for _, r := range results {
@@ -61,7 +61,7 @@ func Summarize(results []Result) Summary {
 	return s
 }
 
-// Pending mengembalikan hasil berstatus UPDATE (butuh tindakan).
+// Pending returns results with status UPDATE (action is pending).
 func Pending(results []Result) []Result {
 	out := []Result{}
 	for _, r := range results {
@@ -77,9 +77,9 @@ func home() string {
 	return h
 }
 
-// execOut menjalankan perintah dengan timeout dan mengembalikan stdout.
-// Exit code non-nol TIDAK dianggap fatal (mis. `npm outdated` exit 1
-// saat ada paket tertinggal) — output tetap dipakai.
+// execOut runs a command with a timeout and returns stdout.
+// A non-zero exit code is not fatal (for example `npm outdated`
+// exits with 1 when packages are outdated). The output is still used.
 func execOut(ctx context.Context, timeout time.Duration, dir, name string, args ...string) string {
 	c, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -96,7 +96,7 @@ func commandExists(name string) bool {
 	return err == nil
 }
 
-// Run menjalankan seluruh cek berurutan dan mengembalikan hasilnya.
+// Run executes all checks in order and returns the results.
 func Run(ctx context.Context) []Result {
 	checks := []func(context.Context) Result{
 		checkPi,
@@ -122,7 +122,7 @@ func Run(ctx context.Context) []Result {
 	return results
 }
 
-// PrintTable mencetak hasil dalam format tabel teks.
+// PrintTable prints the results as a text table.
 func PrintTable(w io.Writer, results []Result) {
 	fmt.Fprintf(w, "\n%-22s %-16s %-16s %-10s %s\n", "KOMPONEN", "TERPASANG", "TERBARU", "STATUS", "CATATAN")
 	fmt.Fprintln(w, "----------------------------------------------------------------------------------------------")
@@ -142,7 +142,7 @@ func trunc(s string, n int) string {
 	return string(r[:n-1]) + "…"
 }
 
-// PrintManual mencetak langkah manual berurutan untuk hasil UPDATE.
+// PrintManual prints the ordered manual steps for UPDATE results.
 func PrintManual(w io.Writer, results []Result) {
 	pending := Pending(results)
 	fmt.Fprintln(w, "\n== Langkah manual berurutan ==")
@@ -329,7 +329,7 @@ func pypiLatest(ctx context.Context, pkg string) string {
 	if err != nil {
 		return ""
 	}
-	defer resp.Body.Close() //nolint:errcheck // body close best-effort pada read path
+	defer resp.Body.Close() //nolint:errcheck // close errors need no action on a read path
 	var v struct {
 		Info struct {
 			Version string `json:"version"`
@@ -355,8 +355,8 @@ func checkGortex(ctx context.Context) Result {
 	if inst == "" {
 		return unknown("gortex", "-", "-", "gagal baca gortex version")
 	}
-	// `gortex upgrade` tanpa --run hanya mencetak rencana; bila sudah
-	// terkini ia menyatakan "already the latest".
+	// `gortex upgrade` without --run only prints the plan. It reports
+	// "already the latest" when the version is current.
 	c, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(c, "gortex", "upgrade")
@@ -529,7 +529,7 @@ func checkPiConfig(_ context.Context) Result {
 	if len(problems) > 0 {
 		return unknown("pi-config", "cek", "-", "masalah config: "+strings.Join(problems, "; "))
 	}
-	// Hitung server tanpa pernah mencetak isi (mungkin berisi secret).
+	// Count the servers without ever printing the content (it can contain secrets).
 	raw, _ := os.ReadFile(mcp)
 	var v struct {
 		MCPServers map[string]any `json:"mcpServers"`
