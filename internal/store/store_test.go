@@ -16,7 +16,7 @@ func TestRecordAndListRuns(t *testing.T) {
 
 	start := time.Now()
 	id, err := st.RecordRun(start, start.Add(time.Second), 14, 1, 0, 1, []ResultRow{
-		{Component: "pi", Installed: "0.85.0", Latest: "0.85.1", Status: "UPDATE", Note: "npm tertinggal"},
+		{Component: "pi", Installed: "0.85.0", Latest: "0.85.1", Status: "UPDATE", Note: "npm package is outdated"},
 		{Component: "herdr", Installed: "0.9.1", Latest: "0.9.1", Status: "OK", Note: "brew"},
 	})
 	if err != nil {

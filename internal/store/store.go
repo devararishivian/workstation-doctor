@@ -89,11 +89,11 @@ func DefaultPath() string {
 // Open opens the database at path and creates it when necessary.
 func Open(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, fmt.Errorf("store: siapkan direktori %s: %w", filepath.Dir(path), err)
+		return nil, fmt.Errorf("store: create directory %s: %w", filepath.Dir(path), err)
 	}
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
-		return nil, fmt.Errorf("store: buka %s: %w", path, err)
+		return nil, fmt.Errorf("store: open %s: %w", path, err)
 	}
 	if err := db.Ping(); err != nil {
 		_ = db.Close()
@@ -101,7 +101,7 @@ func Open(path string) (*Store, error) {
 	}
 	if _, err := db.Exec(schema); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("store: migrasi %s: %w", path, err)
+		return nil, fmt.Errorf("store: migrate %s: %w", path, err)
 	}
 	return &Store{db: db}, nil
 }
@@ -119,7 +119,7 @@ func ts(t time.Time) string {
 func (s *Store) RecordRun(start, end time.Time, nOk, nUpdate, nUnknown, exitCode int, results []ResultRow) (int64, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
-		return 0, fmt.Errorf("store: mulai transaksi run: %w", err)
+		return 0, fmt.Errorf("store: start run transaction: %w", err)
 	}
 	// Rollback is best effort. Commit decides the final result.
 	defer func() { _ = tx.Rollback() }()
@@ -128,18 +128,18 @@ func (s *Store) RecordRun(start, end time.Time, nOk, nUpdate, nUnknown, exitCode
 		 VALUES(?,?,?,?,?,?)`,
 		ts(start), ts(end), nOk, nUpdate, nUnknown, exitCode)
 	if err != nil {
-		return 0, fmt.Errorf("store: simpan run: %w", err)
+		return 0, fmt.Errorf("store: save run: %w", err)
 	}
 	runID, err := res.LastInsertId()
 	if err != nil {
-		return 0, fmt.Errorf("store: id run: %w", err)
+		return 0, fmt.Errorf("store: run id: %w", err)
 	}
 	for _, r := range results {
 		if _, err := tx.Exec(
 			`INSERT INTO check_results(run_id, component, installed, latest, status, note)
 			 VALUES(?,?,?,?,?,?)`,
 			runID, r.Component, r.Installed, r.Latest, r.Status, r.Note); err != nil {
-			return 0, fmt.Errorf("store: simpan hasil %s: %w", r.Component, err)
+			return 0, fmt.Errorf("store: save result %s: %w", r.Component, err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
@@ -155,7 +155,7 @@ func (s *Store) RecordAction(runID int64, kind, command, status, output string, 
 		 VALUES(?,?,?,?,?,?,?)`,
 		runID, kind, command, status, output, ts(start), ts(end))
 	if err != nil {
-		return fmt.Errorf("store: simpan aksi %q: %w", command, err)
+		return fmt.Errorf("store: save action %q: %w", command, err)
 	}
 	return nil
 }

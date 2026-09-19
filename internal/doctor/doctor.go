@@ -124,14 +124,14 @@ func Run(ctx context.Context) []Result {
 
 // PrintTable prints the results as a text table.
 func PrintTable(w io.Writer, results []Result) {
-	fmt.Fprintf(w, "\n%-22s %-16s %-16s %-10s %s\n", "KOMPONEN", "TERPASANG", "TERBARU", "STATUS", "CATATAN")
+	fmt.Fprintf(w, "\n%-22s %-16s %-16s %-10s %s\n", "COMPONENT", "INSTALLED", "LATEST", "STATUS", "NOTE")
 	fmt.Fprintln(w, "----------------------------------------------------------------------------------------------")
 	for _, r := range results {
 		fmt.Fprintf(w, "%-22s %-16s %-16s %-10s %s\n",
 			trunc(r.Component, 22), trunc(r.Installed, 16), trunc(r.Latest, 16), r.Status, r.Note)
 	}
 	s := Summarize(results)
-	fmt.Fprintf(w, "\nRingkasan: %d OK · %d perlu update · %d unknown\n", s.OK, s.Update, s.Unknown)
+	fmt.Fprintf(w, "\nSummary: %d OK · %d need update · %d unknown\n", s.OK, s.Update, s.Unknown)
 }
 
 func trunc(s string, n int) string {
@@ -145,9 +145,9 @@ func trunc(s string, n int) string {
 // PrintManual prints the ordered manual steps for UPDATE results.
 func PrintManual(w io.Writer, results []Result) {
 	pending := Pending(results)
-	fmt.Fprintln(w, "\n== Langkah manual berurutan ==")
+	fmt.Fprintln(w, "\n== Ordered manual steps ==")
 	if len(pending) == 0 {
-		fmt.Fprintln(w, "Tidak ada tindakan. Semua komponen terkini.")
+		fmt.Fprintln(w, "No action is needed. All components are current.")
 		return
 	}
 	for i, r := range pending {
@@ -189,27 +189,27 @@ func npmGlobalInstalled(ctx context.Context, pkg string) string {
 
 func checkPi(ctx context.Context) Result {
 	if !commandExists("pi") {
-		return unknown("pi", "-", "-", "binary pi tidak ada di PATH")
+		return unknown("pi", "-", "-", "pi binary is not in PATH")
 	}
 	inst := execOut(ctx, 15*time.Second, "", "pi", "--version")
 	if inst == "" {
-		return unknown("pi", "-", "-", "gagal baca pi --version")
+		return unknown("pi", "-", "-", "cannot read pi --version")
 	}
 	latest := npmLatest(ctx, "@earendil-works/pi-coding-agent")
 	if latest == "" {
-		return unknown("pi", inst, "-", "gagal baca npm registry (offline?)")
+		return unknown("pi", inst, "-", "cannot read npm registry (offline?)")
 	}
 	if inst == latest {
 		return ok("pi", inst, latest, "npm")
 	}
 	pkg := fmt.Sprintf("@earendil-works/pi-coding-agent@%s", latest)
 	cmd := "npm i -g " + pkg
-	return needUpdate("pi", inst, latest, cmd, cmd, "npm tertinggal")
+	return needUpdate("pi", inst, latest, cmd, cmd, "npm package is outdated")
 }
 
 func checkHerdr(ctx context.Context) Result {
 	if !commandExists("herdr") {
-		return unknown("herdr", "-", "-", "binary herdr tidak ada di PATH")
+		return unknown("herdr", "-", "-", "herdr binary is not in PATH")
 	}
 	out := execOut(ctx, 15*time.Second, "", "herdr", "--version")
 	inst := ""
@@ -217,7 +217,7 @@ func checkHerdr(ctx context.Context) Result {
 		inst = f[1]
 	}
 	if inst == "" {
-		return unknown("herdr", "-", "-", "gagal baca herdr --version")
+		return unknown("herdr", "-", "-", "cannot read herdr --version")
 	}
 	info := execOut(ctx, 60*time.Second, "", "brew", "info", "--json=v2", "herdr")
 	var v struct {
@@ -232,19 +232,19 @@ func checkHerdr(ctx context.Context) Result {
 		latest = v.Formulae[0].Versions.Stable
 	}
 	if latest == "" {
-		return unknown("herdr", inst, "-", "gagal baca brew info (offline?)")
+		return unknown("herdr", inst, "-", "cannot read brew info (offline?)")
 	}
 	if inst == latest {
 		return ok("herdr", inst, latest, "brew")
 	}
-	return needUpdate("herdr", inst, latest, "brew upgrade herdr", "brew upgrade herdr", "brew tertinggal")
+	return needUpdate("herdr", inst, latest, "brew upgrade herdr", "brew upgrade herdr", "brew formula is outdated")
 }
 
 const ghosttyBin = "/Applications/Ghostty.app/Contents/MacOS/ghostty"
 
 func checkGhostty(ctx context.Context) Result {
 	if _, err := os.Stat(ghosttyBin); err != nil {
-		return unknown("ghostty", "-", "-", "Ghostty.app tidak ditemukan")
+		return unknown("ghostty", "-", "-", "Ghostty.app was not found")
 	}
 	out := execOut(ctx, 15*time.Second, "", ghosttyBin, "--version")
 	inst := ""
@@ -254,7 +254,7 @@ func checkGhostty(ctx context.Context) Result {
 		}
 	}
 	if inst == "" {
-		return unknown("ghostty", "-", "-", "gagal baca ghostty --version")
+		return unknown("ghostty", "-", "-", "cannot read ghostty --version")
 	}
 	info := execOut(ctx, 60*time.Second, "", "brew", "info", "--cask", "--json=v2", "ghostty")
 	var v struct {
@@ -267,37 +267,37 @@ func checkGhostty(ctx context.Context) Result {
 		latest, _, _ = strings.Cut(v.Casks[0].Version, ",")
 	}
 	if latest == "" {
-		return unknown("ghostty", inst, "-", "gagal baca brew cask info (offline?)")
+		return unknown("ghostty", inst, "-", "cannot read brew cask info (offline?)")
 	}
 	if inst == latest {
 		return ok("ghostty", inst, latest, "brew cask")
 	}
 	return needUpdate("ghostty", inst, latest,
-		"brew upgrade --cask ghostty", "brew upgrade --cask ghostty", "cask tertinggal")
+		"brew upgrade --cask ghostty", "brew upgrade --cask ghostty", "cask is outdated")
 }
 
 func checkNpmPkg(ctx context.Context, label, pkg string) Result {
 	if !commandExists("npm") {
-		return unknown(label, "-", "-", "npm tidak ada di PATH")
+		return unknown(label, "-", "-", "npm is not in PATH")
 	}
 	inst := npmGlobalInstalled(ctx, pkg)
 	if inst == "" {
-		return unknown(label, "-", "-", "paket npm global tidak ditemukan / npm error")
+		return unknown(label, "-", "-", "global npm package was not found / npm error")
 	}
 	latest := npmLatest(ctx, pkg)
 	if latest == "" {
-		return unknown(label, inst, "-", "gagal baca versi terbaru (offline?)")
+		return unknown(label, inst, "-", "cannot read latest version (offline?)")
 	}
 	if inst == latest {
 		return ok(label, inst, latest, "npm global")
 	}
 	cmd := fmt.Sprintf("npm i -g %s@%s", pkg, latest)
-	return needUpdate(label, inst, latest, cmd, cmd, "npm global tertinggal")
+	return needUpdate(label, inst, latest, cmd, cmd, "global npm package is outdated")
 }
 
 func checkSerena(ctx context.Context) Result {
 	if !commandExists("serena") {
-		return unknown("serena", "-", "-", "binary serena tidak ada di PATH")
+		return unknown("serena", "-", "-", "serena binary is not in PATH")
 	}
 	out := execOut(ctx, 15*time.Second, "", "serena", "--version")
 	inst := ""
@@ -305,17 +305,17 @@ func checkSerena(ctx context.Context) Result {
 		inst = f[1]
 	}
 	if inst == "" {
-		return unknown("serena", "-", "-", "gagal baca serena --version")
+		return unknown("serena", "-", "-", "cannot read serena --version")
 	}
 	latest := pypiLatest(ctx, "serena-agent")
 	if latest == "" {
-		return unknown("serena", inst, "-", "gagal baca PyPI (offline?)")
+		return unknown("serena", inst, "-", "cannot read PyPI (offline?)")
 	}
 	if inst == latest {
 		return ok("serena", inst, latest, "uv tool + PyPI")
 	}
 	return needUpdate("serena", inst, latest,
-		"uv tool upgrade serena-agent", "uv tool upgrade serena-agent", "uv tool tertinggal")
+		"uv tool upgrade serena-agent", "uv tool upgrade serena-agent", "uv tool is outdated")
 }
 
 func pypiLatest(ctx context.Context, pkg string) string {
@@ -343,7 +343,7 @@ func pypiLatest(ctx context.Context, pkg string) string {
 
 func checkGortex(ctx context.Context) Result {
 	if !commandExists("gortex") {
-		return unknown("gortex", "-", "-", "binary gortex tidak ada di PATH")
+		return unknown("gortex", "-", "-", "gortex binary is not in PATH")
 	}
 	out := execOut(ctx, 15*time.Second, "", "gortex", "version")
 	inst := ""
@@ -353,7 +353,7 @@ func checkGortex(ctx context.Context) Result {
 		}
 	}
 	if inst == "" {
-		return unknown("gortex", "-", "-", "gagal baca gortex version")
+		return unknown("gortex", "-", "-", "cannot read gortex version")
 	}
 	// `gortex upgrade` without --run only prints the plan. It reports
 	// "already the latest" when the version is current.
@@ -366,22 +366,22 @@ func checkGortex(ctx context.Context) Result {
 	}
 	return needUpdate("gortex", inst, "latest?",
 		"gortex upgrade --run", "gortex upgrade --run",
-		"update tersedia (cek: gortex upgrade)")
+		"update is available (inspect with: gortex upgrade)")
 }
 
 func checkBrewOutdated(ctx context.Context) Result {
 	if !commandExists("brew") {
-		return unknown("brew-outdated", "-", "-", "brew tidak ada")
+		return unknown("brew-outdated", "-", "-", "brew is not installed")
 	}
 	out := execOut(ctx, 120*time.Second, "", "brew", "outdated")
 	if strings.TrimSpace(out) == "" {
-		return ok("brew-outdated", "0", "0", "semua formula/cask terkini")
+		return ok("brew-outdated", "0", "0", "all formulae and casks are current")
 	}
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	names := strings.Join(lines, " ")
 	return needUpdate("brew-outdated", fmt.Sprintf("%d paket", len(lines)), "-",
-		"brew upgrade # tertinggal: "+names, "brew upgrade",
-		"tertanggal: "+names)
+		"brew upgrade # outdated: "+names, "brew upgrade",
+		"outdated: "+names)
 }
 
 func npmOutdatedKeys(ctx context.Context, dir string) string {
@@ -398,53 +398,53 @@ func npmOutdatedKeys(ctx context.Context, dir string) string {
 
 func checkNpmOutdatedGlobal(ctx context.Context) Result {
 	if !commandExists("npm") {
-		return unknown("npm-outdated-g", "-", "-", "npm tidak ada")
+		return unknown("npm-outdated-g", "-", "-", "npm is not installed")
 	}
 	list := npmOutdatedKeys(ctx, "")
 	if list == "" {
-		return ok("npm-outdated-g", "0", "0", "semua paket global terkini")
+		return ok("npm-outdated-g", "0", "0", "all global packages are current")
 	}
 	return needUpdate("npm-outdated-g", list, "-",
-		"npm update -g # tertinggal: "+list, "npm update -g",
-		"paket global tertinggal")
+		"npm update -g # outdated: "+list, "npm update -g",
+		"global packages are outdated")
 }
 
 func checkPiPackages(ctx context.Context) Result {
 	dir := filepath.Join(home(), ".pi", "agent", "npm")
 	if st, err := os.Stat(dir); err != nil || !st.IsDir() {
-		return unknown("pi-packages", "-", "-", dir+" tidak ada")
+		return unknown("pi-packages", "-", "-", dir+" is missing")
 	}
 	list := npmOutdatedKeys(ctx, dir)
 	if list == "" {
-		return ok("pi-packages", "0", "0", "~/.pi/agent/npm terkini")
+		return ok("pi-packages", "0", "0", "~/.pi/agent/npm is current")
 	}
 	return needUpdate("pi-packages", list, "-",
-		"cd ~/.pi/agent/npm && npm update # tertinggal: "+list,
+		"cd ~/.pi/agent/npm && npm update # outdated: "+list,
 		"npm update --prefix \""+dir+"\"",
-		"extension Pi tertinggal")
+		"Pi extensions are outdated")
 }
 
 func checkSuperpowers(ctx context.Context) Result {
 	dir := filepath.Join(home(), ".pi", "agent", "git", "github.com", "obra", "superpowers")
 	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {
-		return unknown("superpowers", "-", "-", "repo tidak ditemukan")
+		return unknown("superpowers", "-", "-", "repo was not found")
 	}
 	local := execOut(ctx, 15*time.Second, dir, "git", "rev-parse", "HEAD")
 	if local == "" {
-		return unknown("superpowers", "-", "-", "gagal baca git HEAD")
+		return unknown("superpowers", "-", "-", "cannot read git HEAD")
 	}
 	remote := ""
 	if f := strings.Fields(execOut(ctx, 30*time.Second, dir, "git", "ls-remote", "origin", "main")); len(f) > 0 {
 		remote = f[0]
 	}
 	if remote == "" {
-		return unknown("superpowers", shortSHA(local), "-", "gagal hubungi origin (offline?)")
+		return unknown("superpowers", shortSHA(local), "-", "cannot reach origin (offline?)")
 	}
 	dirty := execOut(ctx, 15*time.Second, dir, "git", "status", "-uno", "--porcelain=v1")
-	note := "main sinkron origin"
+	note := "main is in sync with origin"
 	if dirty != "" {
 		first, _, _ := strings.Cut(dirty, "\n")
-		note += "; kerja kotor: " + first
+		note += "; dirty files: " + first
 	}
 	if local == remote {
 		return ok("superpowers", shortSHA(local), shortSHA(remote), note)
@@ -452,7 +452,7 @@ func checkSuperpowers(ctx context.Context) Result {
 	return needUpdate("superpowers", shortSHA(local), shortSHA(remote),
 		"git -C ~/.pi/agent/git/github.com/obra/superpowers pull --ff-only",
 		"git -C \""+dir+"\" pull --ff-only",
-		"main tertinggal dari origin")
+		"main is behind origin")
 }
 
 func shortSHA(s string) string {
@@ -464,11 +464,11 @@ func shortSHA(s string) string {
 
 func checkHerdrIntegrations(ctx context.Context) Result {
 	if !commandExists("herdr") {
-		return unknown("herdr-integr", "-", "-", "herdr tidak ada")
+		return unknown("herdr-integr", "-", "-", "herdr is not installed")
 	}
 	out := execOut(ctx, 30*time.Second, "", "herdr", "integration", "status")
 	if strings.TrimSpace(out) == "" {
-		return unknown("herdr-integr", "-", "-", "gagal baca integration status")
+		return unknown("herdr-integr", "-", "-", "cannot read integration status")
 	}
 	need := []string{}
 	for line := range strings.SplitSeq(out, "\n") {
@@ -480,7 +480,7 @@ func checkHerdrIntegrations(ctx context.Context) Result {
 		}
 	}
 	if len(need) == 0 {
-		return ok("herdr-integr", "pi,opencode", "current", "hook status agen sinkron")
+		return ok("herdr-integr", "pi,opencode", "current", "agent state hooks are in sync")
 	}
 	targets := strings.Join(need, " ")
 	cmds := make([]string, 0, len(need))
@@ -490,20 +490,20 @@ func checkHerdrIntegrations(ctx context.Context) Result {
 	return needUpdate("herdr-integr", "stale", "current",
 		strings.Join(cmds, "\n  "),
 		strings.Join(cmds, " && "),
-		"hook ketinggalan: "+targets)
+		"stale hooks: "+targets)
 }
 
 func checkGhosttyConfig(ctx context.Context) Result {
 	if _, err := os.Stat(ghosttyBin); err != nil {
-		return unknown("ghostty-config", "-", "-", "Ghostty.app tidak ada")
+		return unknown("ghostty-config", "-", "-", "Ghostty.app was not found")
 	}
 	c, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(c, ghosttyBin, "+show-config", "--changes-only")
 	if err := cmd.Run(); err != nil {
-		return unknown("ghostty-config", "invalid?", "valid", "config gagal divalidasi, cek manual")
+		return unknown("ghostty-config", "invalid?", "valid", "configuration failed validation, inspect it manually")
 	}
-	return ok("ghostty-config", "valid", "valid", "config terparse")
+	return ok("ghostty-config", "valid", "valid", "configuration is valid")
 }
 
 func checkPiConfig(_ context.Context) Result {
@@ -515,19 +515,19 @@ func checkPiConfig(_ context.Context) Result {
 	for _, f := range []string{settings, mcp} {
 		raw, err := os.ReadFile(f)
 		if err != nil {
-			problems = append(problems, filepath.Base(f)+" hilang")
+			problems = append(problems, filepath.Base(f)+" is missing")
 			continue
 		}
 		var v any
 		if json.Unmarshal(raw, &v) != nil {
-			problems = append(problems, filepath.Base(f)+" JSON rusak")
+			problems = append(problems, filepath.Base(f)+" has invalid JSON")
 		}
 	}
 	if _, err := os.Stat(cache); err != nil {
-		problems = append(problems, "mcp-cache.json hilang")
+		problems = append(problems, "mcp-cache.json is missing")
 	}
 	if len(problems) > 0 {
-		return unknown("pi-config", "cek", "-", "masalah config: "+strings.Join(problems, "; "))
+		return unknown("pi-config", "check", "-", "configuration problem: "+strings.Join(problems, "; "))
 	}
 	// Count the servers without ever printing the content (it can contain secrets).
 	raw, _ := os.ReadFile(mcp)
@@ -536,7 +536,7 @@ func checkPiConfig(_ context.Context) Result {
 	}
 	_ = json.Unmarshal(raw, &v)
 	return ok("pi-config", "valid", "valid",
-		fmt.Sprintf("%d MCP server, cache ada", len(v.MCPServers)))
+		fmt.Sprintf("%d MCP servers, cache is present", len(v.MCPServers)))
 }
 
 var skillDescRe = regexp.MustCompile(`(?ms)^description:\s*(.+?)\s*$`)
@@ -544,7 +544,7 @@ var skillDescRe = regexp.MustCompile(`(?ms)^description:\s*(.+?)\s*$`)
 func checkSkills(_ context.Context) Result {
 	root := filepath.Join(home(), ".agents", "skills")
 	if st, err := os.Stat(root); err != nil || !st.IsDir() {
-		return unknown("skills", "-", "-", root+" tidak ada")
+		return unknown("skills", "-", "-", root+" is missing")
 	}
 	total, bad := 0, []string{}
 	_ = filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
@@ -572,15 +572,15 @@ func checkSkills(_ context.Context) Result {
 		return nil
 	})
 	if total == 0 {
-		return unknown("skills", "-", "-", "tidak ada SKILL.md ditemukan")
+		return unknown("skills", "-", "-", "no SKILL.md files were found")
 	}
 	if len(bad) == 0 {
-		return ok("skills", fmt.Sprintf("%d skill", total), "100%<=1024", "batas agentskills.io lolos")
+		return ok("skills", fmt.Sprintf("%d skill", total), "100%<=1024", "within the agentskills.io limit")
 	}
 	show := bad
 	if len(show) > 5 {
 		show = show[:5]
 	}
 	return unknown("skills", fmt.Sprintf("%d skill", total), "-",
-		fmt.Sprintf("%d deskripsi >1024 char: %s", len(bad), strings.Join(show, ", ")))
+		fmt.Sprintf("%d descriptions over 1024 chars: %s", len(bad), strings.Join(show, ", ")))
 }
