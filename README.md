@@ -34,8 +34,8 @@ means a check returned UNKNOWN or the database did not open.
 workstation-doctor compares the installed version against the latest version for each tool: Pi, Herdr, Ghostty,
 opencode-ai, tokenjuice, serena-agent, and gortex. It also reports collective status from `brew outdated` and
 `npm outdated -g`. It checks the packages in `~/.pi/agent/npm` and the superpowers repo with read-only `git ls-remote`.
-It reads `herdr integration status`. It validates the Ghostty configuration, the files `settings.json` and `mcp.json`
-with the MCP cache, and the skill description limit of 1024 characters.
+It reads `herdr integration status` and Herdr plugins from `plugins.json`. It validates the Ghostty configuration, the
+files `settings.json` and `mcp.json` with the MCP cache, and the skill description limit of 1024 characters.
 
 ## Network and secrets
 

@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -34,5 +35,176 @@ func TestFormatManualListsPending(t *testing.T) {
 	})
 	if !strings.Contains(got, "1. npm i -g x") {
 		t.Fatalf("unexpected manual output:\n%s", got)
+	}
+}
+
+func TestEvaluateHerdrPlugins(t *testing.T) {
+	tests := []struct {
+		name          string
+		plugins       []herdrPluginItem
+		resolveFunc   func(owner, repo, ref, managedPath string) (string, error)
+		wantStatus    string
+		wantInstalled string
+		wantLatest    string
+		wantNoteSub   string
+		wantManualSub string
+		wantFixSub    string
+	}{
+		{
+			name:          "empty plugins list",
+			plugins:       nil,
+			resolveFunc:   nil,
+			wantStatus:    StatusOK,
+			wantInstalled: "0 plugins",
+			wantLatest:    "0 plugins",
+			wantNoteSub:   "no plugins installed",
+		},
+		{
+			name: "all plugins up to date",
+			plugins: []herdrPluginItem{
+				{
+					PluginID: "annotate",
+					Name:     "Annotate",
+					Source: herdrPluginSource{
+						Kind:           "github",
+						Owner:          "plannotator",
+						Repo:           "herdr-annotate",
+						ResolvedCommit: "commit1",
+					},
+				},
+				{
+					PluginID: "auto-title",
+					Name:     "Auto Title",
+					Source: herdrPluginSource{
+						Kind:           "github",
+						Owner:          "kryptamine",
+						Repo:           "herdr-auto-title",
+						ResolvedCommit: "commit2",
+					},
+				},
+			},
+			resolveFunc: func(_, repo, _, _ string) (string, error) {
+				if repo == "herdr-annotate" {
+					return "commit1", nil
+				}
+				return "commit2", nil
+			},
+			wantStatus:    StatusOK,
+			wantInstalled: "2 plugins",
+			wantLatest:    "current",
+			wantNoteSub:   "all plugins are in sync",
+		},
+		{
+			name: "one plugin outdated",
+			plugins: []herdrPluginItem{
+				{
+					PluginID: "annotate",
+					Name:     "Annotate",
+					Source: herdrPluginSource{
+						Kind:           "github",
+						Owner:          "plannotator",
+						Repo:           "herdr-annotate",
+						ResolvedCommit: "commit1",
+					},
+				},
+			},
+			resolveFunc: func(_, _, _, _ string) (string, error) {
+				return "commit2", nil
+			},
+			wantStatus:    StatusUpdate,
+			wantInstalled: "1 outdated",
+			wantLatest:    "current",
+			wantNoteSub:   "outdated: annotate",
+			wantManualSub: "herdr plugin install plannotator/herdr-annotate",
+			wantFixSub:    "herdr plugin install plannotator/herdr-annotate --yes",
+		},
+		{
+			name: "plugin with ref and subdir",
+			plugins: []herdrPluginItem{
+				{
+					PluginID: "custom-tool",
+					Source: herdrPluginSource{
+						Kind:           "github",
+						Owner:          "owner",
+						Repo:           "monorepo",
+						Subdir:         "plugins/tool",
+						RequestedRef:   "v1.2.0",
+						ResolvedCommit: "oldsha",
+					},
+				},
+			},
+			resolveFunc: func(_, _, _, _ string) (string, error) {
+				return "newsha", nil
+			},
+			wantStatus:    StatusUpdate,
+			wantInstalled: "1 outdated",
+			wantLatest:    "current",
+			wantNoteSub:   "outdated: custom-tool",
+			wantManualSub: "herdr plugin install owner/monorepo/plugins/tool --ref v1.2.0",
+			wantFixSub:    "herdr plugin install owner/monorepo/plugins/tool --ref v1.2.0 --yes",
+		},
+		{
+			name: "non-github plugin is ignored",
+			plugins: []herdrPluginItem{
+				{
+					PluginID: "local-dev",
+					Source: herdrPluginSource{
+						Kind: "local",
+					},
+				},
+			},
+			resolveFunc: func(_, _, _, _ string) (string, error) {
+				return "some-sha", nil
+			},
+			wantStatus:    StatusOK,
+			wantInstalled: "1 plugins",
+			wantLatest:    "current",
+			wantNoteSub:   "all plugins are in sync",
+		},
+		{
+			name: "remote check returns error",
+			plugins: []herdrPluginItem{
+				{
+					PluginID: "broken-remote",
+					Source: herdrPluginSource{
+						Kind:           "github",
+						Owner:          "owner",
+						Repo:           "repo",
+						ResolvedCommit: "sha",
+					},
+				},
+			},
+			resolveFunc: func(_, _, _, _ string) (string, error) {
+				return "", errors.New("network timeout")
+			},
+			wantStatus:    StatusUnknown,
+			wantInstalled: "1 plugins",
+			wantLatest:    "-",
+			wantNoteSub:   "cannot reach remote repository for: broken-remote",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := evaluateHerdrPlugins(tt.plugins, tt.resolveFunc)
+			if got.Status != tt.wantStatus {
+				t.Errorf("status = %q, want %q", got.Status, tt.wantStatus)
+			}
+			if got.Installed != tt.wantInstalled {
+				t.Errorf("installed = %q, want %q", got.Installed, tt.wantInstalled)
+			}
+			if got.Latest != tt.wantLatest {
+				t.Errorf("latest = %q, want %q", got.Latest, tt.wantLatest)
+			}
+			if !strings.Contains(got.Note, tt.wantNoteSub) {
+				t.Errorf("note %q does not contain %q", got.Note, tt.wantNoteSub)
+			}
+			if tt.wantManualSub != "" && !strings.Contains(got.Manual, tt.wantManualSub) {
+				t.Errorf("manual %q does not contain %q", got.Manual, tt.wantManualSub)
+			}
+			if tt.wantFixSub != "" && !strings.Contains(got.Fix, tt.wantFixSub) {
+				t.Errorf("fix %q does not contain %q", got.Fix, tt.wantFixSub)
+			}
+		})
 	}
 }

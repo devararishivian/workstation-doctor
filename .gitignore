@@ -461,3 +461,4 @@ modules.xml
 # binary hasil build + database lokal
 /workstation-doctor
 *.db
+.serena/
