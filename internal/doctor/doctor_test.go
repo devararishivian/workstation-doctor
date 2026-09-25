@@ -313,6 +313,3 @@ func TestSystemCheckersInterface(t *testing.T) {
 		}
 	}
 }
-
-
-

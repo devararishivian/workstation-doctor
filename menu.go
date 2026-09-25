@@ -1,7 +1,6 @@
-// This file owns the interactive menu. Two variants exist because the
-// modern chrome needs a real terminal: a huh select menu with a spinner
-// on a TTY, and the classic numbered menu everywhere else (pipes,
-// tests, automation).
+// Package main provides the interactive menu. Two variants exist:
+// a modern declarative Go-TUI menu on a real terminal (TTY),
+// and a classic numbered menu everywhere else (pipes, tests, automation).
 package main
 
 import (
@@ -11,20 +10,14 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"time"
 	"workstation-doctor/internal/doctor"
 	"workstation-doctor/internal/store"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/lipgloss"
+	tui "github.com/grindlemire/go-tui"
 	"github.com/mattn/go-isatty"
 	"github.com/urfave/cli/v3"
 )
-
-// menuTitleStyle paints the menu header in Catppuccin blue. It renders
-// only on a capable terminal; elsewhere lipgloss leaves text plain.
-var menuTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#89B4FA"))
 
 // isInteractive reports whether both input and output are terminals.
 // Fancy chrome requires both: without a TTY on stdin no keys arrive,
@@ -71,45 +64,175 @@ func classicMenu(ctx context.Context, cmd *cli.Command) error {
 	}
 }
 
+type menuItem struct {
+	key      string
+	shortcut string
+	label    string
+}
+
+type menuApp struct {
+	summary  string
+	selected *tui.State[int]
+	choice   *tui.State[string]
+	items    []menuItem
+}
+
+func newMenuApp(summary string) *menuApp {
+	return &menuApp{
+		summary:  summary,
+		selected: tui.NewState(0),
+		choice:   tui.NewState(""),
+		items: []menuItem{
+			{key: "check", shortcut: "1", label: "Check status (read-only)"},
+			{key: "manual", shortcut: "2", label: "Show ordered manual steps"},
+			{key: "fix", shortcut: "3", label: "Run automatic fix"},
+			{key: "history", shortcut: "4", label: "Show history"},
+			{key: "quit", shortcut: "0", label: "Quit"},
+		},
+	}
+}
+
+func (m *menuApp) KeyMap() tui.KeyMap {
+	return tui.KeyMap{
+		tui.On(tui.KeyDown, func(_ tui.KeyEvent) { m.selectNext() }),
+		tui.On(tui.Rune('j'), func(_ tui.KeyEvent) { m.selectNext() }),
+		tui.On(tui.KeyUp, func(_ tui.KeyEvent) { m.selectPrev() }),
+		tui.On(tui.Rune('k'), func(_ tui.KeyEvent) { m.selectPrev() }),
+		tui.On(tui.KeyEnter, func(ke tui.KeyEvent) {
+			idx := m.selected.Get()
+			if idx >= 0 && idx < len(m.items) {
+				m.choice.Set(m.items[idx].key)
+			}
+			ke.App().Stop()
+		}),
+		tui.On(tui.Rune('1'), func(ke tui.KeyEvent) { m.choose("check", ke.App()) }),
+		tui.On(tui.Rune('2'), func(ke tui.KeyEvent) { m.choose("manual", ke.App()) }),
+		tui.On(tui.Rune('3'), func(ke tui.KeyEvent) { m.choose("fix", ke.App()) }),
+		tui.On(tui.Rune('4'), func(ke tui.KeyEvent) { m.choose("history", ke.App()) }),
+		tui.On(tui.Rune('0'), func(ke tui.KeyEvent) { m.choose("quit", ke.App()) }),
+		tui.On(tui.Rune('q'), func(ke tui.KeyEvent) { m.choose("quit", ke.App()) }),
+		tui.On(tui.KeyEscape, func(ke tui.KeyEvent) { m.choose("quit", ke.App()) }),
+	}
+}
+
+func (m *menuApp) selectNext() {
+	m.selected.Update(func(v int) int {
+		if v >= len(m.items)-1 {
+			return 0
+		}
+		return v + 1
+	})
+}
+
+func (m *menuApp) selectPrev() {
+	m.selected.Update(func(v int) int {
+		if v <= 0 {
+			return len(m.items) - 1
+		}
+		return v - 1
+	})
+}
+
+func (m *menuApp) choose(key string, app *tui.App) {
+	m.choice.Set(key)
+	if app != nil {
+		app.Stop()
+	}
+}
+
+func (m *menuApp) Render(_ *tui.App) *tui.Element {
+	card := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Column),
+		tui.WithBorder(tui.BorderRounded),
+		tui.WithBorderStyle(tui.NewStyle().Foreground(tui.Cyan)),
+		tui.WithPadding(1),
+		tui.WithGap(1),
+	)
+
+	title := tui.New(
+		tui.WithText("workstation-doctor"),
+		tui.WithTextStyle(tui.NewStyle().Foreground(tui.Cyan).Bold()),
+	)
+	card.AddChild(title)
+
+	if m.summary != "" {
+		sub := tui.New(
+			tui.WithText(m.summary),
+			tui.WithTextStyle(tui.NewStyle().Dim()),
+		)
+		card.AddChild(sub)
+	}
+
+	menuList := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Column),
+		tui.WithGap(0),
+	)
+
+	currentSel := m.selected.Get()
+	for i, item := range m.items {
+		isSelected := i == currentSel
+		prefix := "   "
+		style := tui.NewStyle()
+		if isSelected {
+			prefix = " > "
+			style = tui.NewStyle().Foreground(tui.Green).Bold()
+		}
+
+		line := tui.New(
+			tui.WithText(fmt.Sprintf("%s[%s] %s", prefix, item.shortcut, item.label)),
+			tui.WithTextStyle(style),
+		)
+		menuList.AddChild(line)
+	}
+	card.AddChild(menuList)
+
+	hint := tui.New(
+		tui.WithText("Use ↑/↓ or j/k to navigate · Enter to select · q to quit"),
+		tui.WithTextStyle(tui.NewStyle().Dim()),
+	)
+	card.AddChild(hint)
+
+	return card
+}
+
 func fancyMenu(ctx context.Context, cmd *cli.Command) error {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
 	defer stop()
 	out := newOutputLogger(cmd.Root().Writer)
+
 	for {
-		out.Info().Msg(menuTitleStyle.Render("workstation-doctor"))
-		var choice string
-		if err := huh.NewSelect[string]().
-			Title("What do you want to do?").
-			Description(lastRunSummary(cmd)).
-			Options(
-				huh.NewOption("Check status (read-only)", "check"),
-				huh.NewOption("Show ordered manual steps", "manual"),
-				huh.NewOption("Run automatic fix", "fix"),
-				huh.NewOption("Show history", "history"),
-				huh.NewOption("Quit", "quit"),
-			).
-			Value(&choice).
-			WithTheme(huh.ThemeCatppuccin()).
-			Run(); err != nil {
+		summary := lastRunSummary(cmd)
+		menu := newMenuApp(summary)
+		app, err := tui.NewApp(tui.WithRootComponent(menu))
+		if err != nil {
+			return fmt.Errorf("initialize tui app: %w", err)
+		}
+		if err := app.Run(); err != nil {
+			_ = app.Close()
 			return nil
 		}
+		_ = app.Close()
+
+		choice := menu.choice.Get()
 		switch choice {
 		case "check":
-			results, runID, err := gatherWithSpinner(ctx, cmd, "Running checks")
+			results, runID, err := gatherWithProgress(ctx, cmd, "Running checks")
 			if err != nil {
 				menuRun(err)
 				continue
 			}
 			menuRun(renderCheck(out, results, runID))
 		case "manual":
-			results, runID, err := gatherWithSpinner(ctx, cmd, "Running checks")
+			results, runID, err := gatherWithProgress(ctx, cmd, "Running checks")
 			if err != nil {
 				menuRun(err)
 				continue
 			}
 			menuRun(renderManual(out, results, runID))
 		case "fix":
-			results, runID, err := gatherWithSpinner(ctx, cmd, "Running checks")
+			results, runID, err := gatherWithProgress(ctx, cmd, "Running checks")
 			if err != nil {
 				menuRun(err)
 				continue
@@ -122,7 +245,7 @@ func fancyMenu(ctx context.Context, cmd *cli.Command) error {
 			menuRun(runFixFlow(ctx, out, path, results, runID, false))
 		case "history":
 			menuRun(doHistory(ctx, cmd))
-		case "quit":
+		case "quit", "":
 			return nil
 		}
 	}
@@ -150,50 +273,73 @@ func lastRunSummary(cmd *cli.Command) string {
 		r.ID, r.NOk, r.NUpdate, r.NUnknown)
 }
 
-// spinModel is a minimal Bubble Tea program: a dot spinner beside a
-// title. It runs until the caller quits it after the work finishes.
-type spinModel struct {
-	spinner spinner.Model
-	title   string
+type checkOutput struct {
+	results []doctor.Result
+	runID   int64
+	err     error
 }
 
-func newSpinModel(title string) spinModel {
-	return spinModel{
-		spinner: spinner.New(spinner.WithSpinner(spinner.Dot)),
-		title:   title,
+type progressApp struct {
+	title  string
+	dots   *tui.State[int]
+	doneCh <-chan checkOutput
+	output checkOutput
+	app    *tui.App
+}
+
+func newProgressApp(title string, doneCh <-chan checkOutput) *progressApp {
+	return &progressApp{
+		title:  title,
+		dots:   tui.NewState(0),
+		doneCh: doneCh,
 	}
 }
 
-func (m spinModel) Init() tea.Cmd { return m.spinner.Tick }
-
-func (m spinModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmd tea.Cmd
-	m.spinner, cmd = m.spinner.Update(msg)
-	return m, cmd
+func (p *progressApp) Watchers() []tui.Watcher {
+	return []tui.Watcher{
+		tui.OnTimer(200*time.Millisecond, func() {
+			p.dots.Update(func(v int) int { return (v + 1) % 4 })
+		}),
+		tui.Watch(p.doneCh, func(out checkOutput) {
+			p.output = out
+			if p.app != nil {
+				p.app.Stop()
+			}
+		}),
+	}
 }
 
-func (m spinModel) View() string {
-	return " " + m.spinner.View() + " " + m.title
+func (p *progressApp) Render(app *tui.App) *tui.Element {
+	p.app = app
+	dotsStr := strings.Repeat(".", p.dots.Get())
+	return tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Column),
+		tui.WithBorder(tui.BorderRounded),
+		tui.WithBorderStyle(tui.NewStyle().Foreground(tui.Yellow)),
+		tui.WithPadding(1),
+		tui.WithAlign(tui.AlignCenter),
+		tui.WithText(fmt.Sprintf("%s%s", p.title, dotsStr)),
+		tui.WithTextStyle(tui.NewStyle().Foreground(tui.Yellow).Bold()),
+	)
 }
 
-// gatherWithSpinner runs the checks while a spinner animates. The work
-// runs in the background and the done channel proves the results are
-// fully written before they are read.
-func gatherWithSpinner(ctx context.Context, cmd *cli.Command, title string) ([]doctor.Result, int64, error) {
-	var results []doctor.Result
-	var runID int64
-	var runErr error
-	done := make(chan struct{})
-	p := tea.NewProgram(newSpinModel(title))
+// gatherWithProgress runs checks while animating a progress box with Go-TUI.
+func gatherWithProgress(ctx context.Context, cmd *cli.Command, title string) ([]doctor.Result, int64, error) {
+	doneCh := make(chan checkOutput, 1)
 	go func() {
-		defer close(done)
-		results, runID, runErr = runAndRecord(ctx, cmd)
-		p.Quit()
+		results, runID, err := runAndRecord(ctx, cmd)
+		doneCh <- checkOutput{results: results, runID: runID, err: err}
 	}()
-	if _, err := p.Run(); err != nil {
-		<-done
-		return nil, 0, fmt.Errorf("menu spinner failed: %w", err)
+
+	prog := newProgressApp(title, doneCh)
+	app, err := tui.NewApp(tui.WithRootComponent(prog))
+	if err != nil {
+		out := <-doneCh
+		return out.results, out.runID, out.err
 	}
-	<-done
-	return results, runID, runErr
+	_ = app.Run()
+	_ = app.Close()
+
+	return prog.output.results, prog.output.runID, prog.output.err
 }

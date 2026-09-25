@@ -42,6 +42,7 @@ const (
 // Category represents the audit component category.
 type Category string
 
+// Audit component categories.
 const (
 	CategoryTool   Category = "tool"
 	CategoryConfig Category = "config"
@@ -1049,60 +1050,6 @@ func evaluatePiConfigVersion(lastChangelogVersion, installedVersion string) Resu
 	}
 	return needUpdate("pi-config-version", lastChangelogVersion, installedVersion,
 		"pi /settings", "pi /reload", "config version is older than installed Pi version")
-}
-
-func checkGhosttyConfig(ctx context.Context) Result {
-	if _, err := os.Stat(ghosttyBin); err != nil {
-		return unknown("ghostty-config", "-", "-", "Ghostty.app was not found")
-	}
-	c, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(c, ghosttyBin, "+show-config", "--changes-only")
-	if err := cmd.Run(); err != nil {
-		return unknown("ghostty-config", "invalid?", "valid", "configuration failed validation, inspect it manually")
-	}
-	return ok("ghostty-config", "valid", "valid", "configuration is valid")
-}
-
-func checkPiConfig(_ context.Context) Result {
-	h, err := userHome()
-	if err != nil {
-		return unknown("pi-config", "-", "-", "cannot determine home directory")
-	}
-	settings := filepath.Join(h, ".pi", "agent", "settings.json")
-	mcp := filepath.Join(h, ".pi", "agent", "mcp.json")
-	cache := filepath.Join(h, ".pi", "agent", "mcp-cache.json")
-	problems := []string{}
-	for _, f := range []string{settings, mcp} {
-		raw, err := os.ReadFile(f)
-		if err != nil {
-			problems = append(problems, filepath.Base(f)+" is missing")
-			continue
-		}
-		var v any
-		if json.Unmarshal(raw, &v) != nil {
-			problems = append(problems, filepath.Base(f)+" has invalid JSON")
-		}
-	}
-	if _, err := os.Stat(cache); err != nil {
-		problems = append(problems, "mcp-cache.json is missing")
-	}
-	if len(problems) > 0 {
-		return unknown("pi-config", "check", "-", "configuration problem: "+strings.Join(problems, "; "))
-	}
-	// Count the servers without ever printing the content (it can contain secrets).
-	raw, err := os.ReadFile(mcp)
-	if err != nil {
-		return unknown("pi-config", "check", "-", "configuration problem: mcp.json is unreadable")
-	}
-	var v struct {
-		MCPServers map[string]any `json:"mcpServers"`
-	}
-	if err := json.Unmarshal(raw, &v); err != nil {
-		return unknown("pi-config", "check", "-", "configuration problem: mcp.json is unreadable")
-	}
-	return ok("pi-config", "valid", "valid",
-		fmt.Sprintf("%d MCP servers, cache is present", len(v.MCPServers)))
 }
 
 var skillDescRe = regexp.MustCompile(`(?ms)^description:\s*(.+?)\s*$`)

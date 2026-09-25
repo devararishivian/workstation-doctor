@@ -90,4 +90,3 @@ func TestStoreForeignKeysEnforced(t *testing.T) {
 		t.Fatal("expected foreign key error for non-existent run_id, got nil")
 	}
 }
-

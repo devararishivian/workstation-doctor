@@ -154,7 +154,7 @@ func (s *Store) RecordRun(ctx context.Context, start, end time.Time, nOk, nUpdat
 	if err != nil {
 		return 0, fmt.Errorf("store: prepare result statement: %w", err)
 	}
-	defer stmt.Close()
+	defer stmt.Close() //nolint:errcheck // close errors need no action on transaction finish
 	for _, r := range results {
 		if _, err := stmt.ExecContext(ctx, runID, r.Component, r.Installed, r.Latest, r.Status, r.Note); err != nil {
 			return 0, fmt.Errorf("store: save result %s: %w", r.Component, err)
