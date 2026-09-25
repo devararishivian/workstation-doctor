@@ -10,8 +10,8 @@ help: ## show targets
 build: ## build binary (version from git)
 	go build -ldflags "$(LDFLAGS)" -o $(BINARY) .
 
-test: ## run tests
-	go test ./...
+test: ## run tests with data race detector
+	go test -race ./...
 
 vet: ## run go vet
 	go vet ./...
@@ -31,8 +31,8 @@ vuln: ## scan dependencies for known vulnerabilities
 run: build ## build and run (override with ARGS="check --db /tmp/x.db")
 	./$(BINARY) $(ARGS)
 
-clean: ## remove built binary
-	rm -f $(BINARY)
+clean: ## remove built binary and local database files
+	rm -f $(BINARY) *.db
 
 install: ## install binary to GOPATH/bin
 	go install -ldflags "$(LDFLAGS)" .
