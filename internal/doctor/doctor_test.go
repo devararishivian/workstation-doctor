@@ -1,9 +1,11 @@
 package doctor
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The table must stay free of escape codes when stdout is not a
@@ -260,5 +262,57 @@ func TestEvaluatePiConfigVersion(t *testing.T) {
 		t.Errorf("got status %s, want %s", res.Status, StatusUpdate)
 	}
 }
+
+type mockChecker struct {
+	name  string
+	delay time.Duration
+}
+
+func (m *mockChecker) Name() string       { return m.name }
+func (m *mockChecker) Category() Category { return CategoryTool }
+func (m *mockChecker) Check(_ context.Context) Result {
+	time.Sleep(m.delay)
+	return Result{Component: m.name, Status: StatusOK}
+}
+
+func TestEngineRunDeterministicOrder(t *testing.T) {
+	engine := &Engine{
+		checkers: []Checker{
+			&mockChecker{name: "first", delay: 30 * time.Millisecond},
+			&mockChecker{name: "second", delay: 10 * time.Millisecond},
+			&mockChecker{name: "third", delay: 20 * time.Millisecond},
+		},
+	}
+
+	res := engine.Run(context.Background())
+	if len(res) != 3 {
+		t.Fatalf("len(res) = %d, want 3", len(res))
+	}
+	if res[0].Component != "first" || res[1].Component != "second" || res[2].Component != "third" {
+		t.Errorf("unexpected order: %s, %s, %s", res[0].Component, res[1].Component, res[2].Component)
+	}
+}
+
+func TestSystemCheckersInterface(t *testing.T) {
+	checkers := []Checker{
+		&brewOutdatedChecker{},
+		&npmOutdatedGlobalChecker{},
+		&piPackagesChecker{},
+		&superpowersChecker{},
+		&herdrIntegrationsChecker{},
+		&herdrPluginsChecker{},
+		&skillsChecker{},
+	}
+
+	for _, c := range checkers {
+		if c.Name() == "" {
+			t.Errorf("checker %T has empty Name()", c)
+		}
+		if c.Category() != CategorySystem && c.Category() != CategorySkill {
+			t.Errorf("checker %s category = %s, want system or skill", c.Name(), c.Category())
+		}
+	}
+}
+
 
 

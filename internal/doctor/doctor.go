@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -142,31 +143,58 @@ func commandExists(name string) bool {
 	return err == nil
 }
 
-// Run executes all checks in order and returns the results.
-func Run(ctx context.Context) []Result {
-	checks := []func(context.Context) Result{
-		checkPi,
-		checkHerdr,
-		checkGhostty,
-		func(c context.Context) Result { return checkNpmPkg(c, "opencode", "opencode-ai") },
-		func(c context.Context) Result { return checkNpmPkg(c, "tokenjuice", "tokenjuice") },
-		checkSerena,
-		checkGortex,
-		checkBrewOutdated,
-		checkNpmOutdatedGlobal,
-		checkPiPackages,
-		checkSuperpowers,
-		checkHerdrIntegrations,
-		checkHerdrPlugins,
-		checkGhosttyConfig,
-		checkPiConfig,
-		checkSkills,
+// Engine manages checkers and coordinates concurrent execution.
+type Engine struct {
+	checkers []Checker
+}
+
+// NewEngine creates an Engine initialized with all standard audit checkers.
+func NewEngine() *Engine {
+	return &Engine{
+		checkers: []Checker{
+			&piVersionChecker{},
+			&herdrVersionChecker{},
+			&ghosttyVersionChecker{},
+			newNpmPackageChecker("opencode", "opencode-ai"),
+			newNpmPackageChecker("tokenjuice", "tokenjuice"),
+			&serenaVersionChecker{},
+			&gortexVersionChecker{},
+			&ghosttyConfigValidChecker{},
+			&ghosttyConfigVersionChecker{},
+			&herdrConfigValidChecker{},
+			&herdrConfigVersionChecker{},
+			&piConfigValidChecker{},
+			&piConfigVersionChecker{},
+			&brewOutdatedChecker{},
+			&npmOutdatedGlobalChecker{},
+			&piPackagesChecker{},
+			&superpowersChecker{},
+			&herdrIntegrationsChecker{},
+			&herdrPluginsChecker{},
+			&skillsChecker{},
+		},
 	}
-	results := make([]Result, 0, len(checks))
-	for _, c := range checks {
-		results = append(results, c(ctx))
+}
+
+// Run executes all checkers concurrently and returns the results preserving order.
+func (e *Engine) Run(ctx context.Context) []Result {
+	results := make([]Result, len(e.checkers))
+	var wg sync.WaitGroup
+	for i, chk := range e.checkers {
+		wg.Add(1)
+		go func(idx int, c Checker) {
+			defer wg.Done()
+			results[idx] = c.Check(ctx)
+		}(i, chk)
 	}
+	wg.Wait()
 	return results
+}
+
+// Run executes all checks concurrently and returns the results.
+// It serves as a facade for NewEngine().Run(ctx).
+func Run(ctx context.Context) []Result {
+	return NewEngine().Run(ctx)
 }
 
 // FormatTable renders the results as a text table. It returns text
@@ -748,6 +776,12 @@ func gitRemoteCommit(ctx context.Context, dir, owner, repo, ref string) (string,
 	return "", errors.New("no commit found in git ls-remote output")
 }
 
+type pluginCheckResult struct {
+	name      string
+	remoteSHA string
+	err       error
+}
+
 func evaluateHerdrPlugins(
 	plugins []herdrPluginItem,
 	resolveRemoteCommit func(owner, repo, ref, managedPath string) (string, error),
@@ -755,13 +789,10 @@ func evaluateHerdrPlugins(
 	if len(plugins) == 0 {
 		return ok("herdr-plugins", "0 plugins", "0 plugins", "no plugins installed")
 	}
-	var (
-		outdatedNames []string
-		manuals       []string
-		fixes         []string
-		failed        []string
-	)
-	for _, p := range plugins {
+
+	pluginResults := make([]pluginCheckResult, len(plugins))
+	var wg sync.WaitGroup
+	for i, p := range plugins {
 		if p.Source.Kind != "github" {
 			continue
 		}
@@ -772,13 +803,36 @@ func evaluateHerdrPlugins(
 		if name == "" {
 			name = p.Source.Owner + "/" + p.Source.Repo
 		}
-		remoteSHA, err := resolveRemoteCommit(p.Source.Owner, p.Source.Repo, p.Source.RequestedRef, p.Source.ManagedPath)
-		if err != nil {
-			failed = append(failed, name)
+		wg.Add(1)
+		go func(idx int, item herdrPluginItem, pluginName string) {
+			defer wg.Done()
+			sha, err := resolveRemoteCommit(item.Source.Owner, item.Source.Repo, item.Source.RequestedRef, item.Source.ManagedPath)
+			pluginResults[idx] = pluginCheckResult{
+				name:      pluginName,
+				remoteSHA: sha,
+				err:       err,
+			}
+		}(i, p, name)
+	}
+	wg.Wait()
+
+	var (
+		outdatedNames []string
+		manuals       []string
+		fixes         []string
+		failed        []string
+	)
+	for i, p := range plugins {
+		if p.Source.Kind != "github" {
 			continue
 		}
-		if remoteSHA != "" && p.Source.ResolvedCommit != remoteSHA {
-			outdatedNames = append(outdatedNames, name)
+		res := pluginResults[i]
+		if res.err != nil {
+			failed = append(failed, res.name)
+			continue
+		}
+		if res.remoteSHA != "" && p.Source.ResolvedCommit != res.remoteSHA {
+			outdatedNames = append(outdatedNames, res.name)
 			target := p.Source.Owner + "/" + p.Source.Repo
 			if p.Source.Subdir != "" {
 				target += "/" + p.Source.Subdir
@@ -1105,4 +1159,60 @@ func checkSkills(_ context.Context) Result {
 	}
 	return unknown("skills", fmt.Sprintf("%d skill", total), "-",
 		fmt.Sprintf("%d descriptions over 1024 chars: %s", len(bad), strings.Join(show, ", ")))
+}
+
+type brewOutdatedChecker struct{}
+
+func (c *brewOutdatedChecker) Name() string       { return "brew-outdated" }
+func (c *brewOutdatedChecker) Category() Category { return CategorySystem }
+func (c *brewOutdatedChecker) Check(ctx context.Context) Result {
+	return checkBrewOutdated(ctx)
+}
+
+type npmOutdatedGlobalChecker struct{}
+
+func (c *npmOutdatedGlobalChecker) Name() string       { return "npm-outdated-g" }
+func (c *npmOutdatedGlobalChecker) Category() Category { return CategorySystem }
+func (c *npmOutdatedGlobalChecker) Check(ctx context.Context) Result {
+	return checkNpmOutdatedGlobal(ctx)
+}
+
+type piPackagesChecker struct{}
+
+func (c *piPackagesChecker) Name() string       { return "pi-packages" }
+func (c *piPackagesChecker) Category() Category { return CategorySystem }
+func (c *piPackagesChecker) Check(ctx context.Context) Result {
+	return checkPiPackages(ctx)
+}
+
+type superpowersChecker struct{}
+
+func (c *superpowersChecker) Name() string       { return "superpowers" }
+func (c *superpowersChecker) Category() Category { return CategorySystem }
+func (c *superpowersChecker) Check(ctx context.Context) Result {
+	return checkSuperpowers(ctx)
+}
+
+type herdrIntegrationsChecker struct{}
+
+func (c *herdrIntegrationsChecker) Name() string       { return "herdr-integr" }
+func (c *herdrIntegrationsChecker) Category() Category { return CategorySystem }
+func (c *herdrIntegrationsChecker) Check(ctx context.Context) Result {
+	return checkHerdrIntegrations(ctx)
+}
+
+type herdrPluginsChecker struct{}
+
+func (c *herdrPluginsChecker) Name() string       { return "herdr-plugins" }
+func (c *herdrPluginsChecker) Category() Category { return CategorySystem }
+func (c *herdrPluginsChecker) Check(ctx context.Context) Result {
+	return checkHerdrPlugins(ctx)
+}
+
+type skillsChecker struct{}
+
+func (c *skillsChecker) Name() string       { return "skills" }
+func (c *skillsChecker) Category() Category { return CategorySkill }
+func (c *skillsChecker) Check(ctx context.Context) Result {
+	return checkSkills(ctx)
 }
