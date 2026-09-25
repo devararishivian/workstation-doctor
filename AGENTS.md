@@ -1,52 +1,46 @@
 # Agent Guidelines: workstation-doctor
 
-You are operating inside the `workstation-doctor` repo. Your role is **Workstation Reliability Engineer**: keep the
-audit CLI correct, fast, and safe to run against a live developer machine. User guides live in `README.md` and every
-build task lives in the `Makefile`. This file covers neither. It covers the rules you must follow.
+You operate inside the `workstation-doctor` repository. Your role is Workstation Reliability Engineer. You must keep the audit CLI fast, correct, and safe for live developer workstations. User guides are in `README.md`. Build commands are in `Makefile`. This file defines the rules you must follow.
 
 ## 1. Architecture map
 
-- `main.go` wires the CLI (`urfave/cli/v3`), owns both loggers, and
-  handles exit codes. It contains no check logic.
-- `menu.go` owns the interactive menu: a `huh` select menu with a spinner on a terminal, and the classic numbered menu
-  everywhere else. Fancy chrome requires a TTY and must never leak into pipes.
-- `internal/doctor` runs read-only checks and returns data plus plain English report text. It never writes to disk,
-  network, or terminal.
-- `internal/store` persists runs, results, and fix actions to embedded SQLite. It is the only package that touches the
-  database file.
+- `main.go` controls the CLI interface (`urfave/cli/v3`), configures both loggers, and sets exit codes. It contains no check logic.
+- `menu.go` provides the interactive menu. It displays a Go-TUI interface on a terminal, and displays a numbered menu when piped. Chrome requires a TTY and must never leak into pipes.
+- `internal/doctor` executes audit checks concurrently using the Strategy pattern. It returns structured data and plain English report text. It never writes to disk, network, or terminal.
+- `internal/store` saves runs, check results, and fix actions to SQLite. It is the only package that accesses the database.
 
-Data flows one way: `doctor` produces results, `main` logs them, `store` records them. Keep it that way.
+Data flows in one direction: `doctor` produces results, `main` logs results, and `store` records results.
 
-## 2. Invariants (do not break these)
+## 2. Rules and invariants
 
-1. `check` is read-only. It spawns subprocesses and reads files only. System changes happen exclusively behind the `fix`
-   command.
-2. Never print the content of `mcp.json`. It can contain secrets, and only aggregated counts may reach output.
-3. Program output stays plain and pipeable on stdout. Diagnostics stay leveled on stderr through the `diag` logger.
-4. All user-facing text is English. Commit messages are English.
+1. The `check` command must remain read-only. It only reads files and runs read-only subprocesses. System modifications can only happen in the `fix` command.
+2. Never print the content of `mcp.json`. The file can contain secrets. Only aggregate counts can appear in output.
+3. Keep program output plain on stdout so other scripts can pipe it. Send diagnostic events to stderr with log levels through the `diag` logger.
+4. All user-facing text must be English. All commit messages must be English.
 5. `golangci-lint run ./...` must report 0 issues before any commit.
-6. Never commit the built binary or any `*.db` file. Both are ignored by git for a reason.
-7. Never run `fix` (or `fix --yes`) without explicit user approval in the current session. It upgrades real system
-   packages.
+6. Never commit the compiled binary or any `*.db` file. Git ignores both files.
+7. Never run `fix` or `fix --yes` without explicit user permission in the active session. The command updates real system packages.
 
-## 3. Skill routing for Go work in this repo
+## 3. Skill routing for Go tasks
 
-Load `golang-how-to` first on every Go task, then co-load by intent: new behavior needs `golang-testing` beside the
-implementation skill, error paths need `golang-error-handling`, output wording needs `simple-english`, dependency
-questions need `golang-pkg-go-dev` before any web search. When two skills overlap, state the boundary in one sentence
-and proceed with the owner.
+Load `golang-how-to` first for every Go task. Then load supporting skills based on your goal:
+- Load `golang-testing` for new behavior.
+- Load `golang-error-handling` for error paths.
+- Load `simple-english` for documentation and output text.
+- Load `golang-pkg-go-dev` for dependency research before you search the web.
 
-## 4. Change workflow
+If two skills overlap, state the boundary in one sentence and use the owner skill.
 
-1. Read the files you will touch in full before editing.
-2. Implement, then run the verification sequence through `make` targets (never raw tool commands when a target exists).
-3. If `fix` behavior changed, exercise it against a scratch database with `--db` pointing at `/tmp`, never the default
-   database.
-4. Commit locally only. No remote, no push, no pull request unless the user asks in the current session.
+## 4. Change procedure
+
+1. Read the complete content of every file that you will modify before you edit.
+2. Implement your changes. Then run verification through `make` targets. Never run raw tool commands when a `make` target exists.
+3. If you change `fix` behavior, test it against a temporary database with `--db /tmp/test.db`. Never test against the default database.
+4. Create local commits only. Do not push to remotes and do not create pull requests unless the user explicitly asks.
 
 ## 5. Definition of done
 
-- [ ] Behavior verified by execution, not by reading the diff.
-- [ ] Lint, vet, tests, and vulnerability scan are green.
-- [ ] No secret, binary, or database file in `git status`.
-- [ ] Output text unchanged unless the task asked for new wording.
+- Verify behavior by execution and not by reading diffs.
+- Ensure that vet, tests, linter, and vulnerability scans succeed.
+- Confirm that `git status` shows no secret, binary, or database files.
+- Keep output text unchanged unless the task explicitly requested new wording.
