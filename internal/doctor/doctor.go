@@ -811,6 +811,192 @@ func evaluateHerdrPlugins(
 	)
 }
 
+type ghosttyConfigValidChecker struct{}
+
+func (c *ghosttyConfigValidChecker) Name() string       { return "ghostty-config-valid" }
+func (c *ghosttyConfigValidChecker) Category() Category { return CategoryConfig }
+func (c *ghosttyConfigValidChecker) Check(ctx context.Context) Result {
+	if _, err := os.Stat(ghosttyBin); err != nil {
+		return unknown("ghostty-config-valid", "-", "-", "Ghostty.app was not found")
+	}
+	out, err := execOut(ctx, 15*time.Second, "", ghosttyBin, "+show-config", "--changes-only")
+	if err != nil && out == "" {
+		return unknown("ghostty-config-valid", "invalid", "valid", "configuration failed validation, inspect it manually")
+	}
+	return ok("ghostty-config-valid", "valid", "valid", "configuration is valid")
+}
+
+type ghosttyConfigVersionChecker struct{}
+
+func (c *ghosttyConfigVersionChecker) Name() string       { return "ghostty-config-version" }
+func (c *ghosttyConfigVersionChecker) Category() Category { return CategoryConfig }
+func (c *ghosttyConfigVersionChecker) Check(ctx context.Context) Result {
+	if _, err := os.Stat(ghosttyBin); err != nil {
+		return unknown("ghostty-config-version", "-", "-", "Ghostty.app was not found")
+	}
+	out, err := execOut(ctx, 15*time.Second, "", ghosttyBin, "+show-config", "--changes-only")
+	if err != nil && out == "" {
+		return unknown("ghostty-config-version", "-", "-", "cannot read ghostty configuration")
+	}
+	lower := strings.ToLower(out)
+	if strings.Contains(lower, "deprecated") || strings.Contains(lower, "obsolete") {
+		return needUpdate("ghostty-config-version", "deprecated options", "current",
+			"ghostty +show-config --changes-only", "ghostty +show-config --changes-only",
+			"configuration contains deprecated options")
+	}
+	return ok("ghostty-config-version", "current", "current", "configuration options are current")
+}
+
+type herdrConfigValidChecker struct{}
+
+func (c *herdrConfigValidChecker) Name() string       { return "herdr-config-valid" }
+func (c *herdrConfigValidChecker) Category() Category { return CategoryConfig }
+func (c *herdrConfigValidChecker) Check(ctx context.Context) Result {
+	if !commandExists("herdr") {
+		return unknown("herdr-config-valid", "-", "-", "herdr is not installed")
+	}
+	out, err := execOut(ctx, 15*time.Second, "", "herdr", "config", "check")
+	if err != nil {
+		return unknown("herdr-config-valid", "invalid", "valid", "herdr config check failed: "+err.Error())
+	}
+	if strings.Contains(strings.ToLower(out), "ok") {
+		return ok("herdr-config-valid", "valid", "valid", "herdr config is valid")
+	}
+	return unknown("herdr-config-valid", "check", "valid", out)
+}
+
+type herdrConfigVersionChecker struct{}
+
+func (c *herdrConfigVersionChecker) Name() string       { return "herdr-config-version" }
+func (c *herdrConfigVersionChecker) Category() Category { return CategoryConfig }
+func (c *herdrConfigVersionChecker) Check(_ context.Context) Result {
+	if !commandExists("herdr") {
+		return unknown("herdr-config-version", "-", "-", "herdr is not installed")
+	}
+	path, err := herdrConfigPath()
+	if err != nil {
+		return unknown("herdr-config-version", "-", "-", "cannot determine herdr config path")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return ok("herdr-config-version", "default", "default", "default configuration is active")
+		}
+		return unknown("herdr-config-version", "-", "-", "cannot read config.toml: "+err.Error())
+	}
+	content := string(raw)
+	missing := []string{}
+	for _, section := range []string{"[ui]", "[theme]", "[[keys.command]]"} {
+		if !strings.Contains(content, section) {
+			missing = append(missing, section)
+		}
+	}
+	if len(missing) > 0 {
+		return needUpdate("herdr-config-version", "legacy", "current",
+			"herdr config check", "herdr config check",
+			"missing modern sections: "+strings.Join(missing, ", "))
+	}
+	return ok("herdr-config-version", "current", "current", "config.toml structure is current")
+}
+
+func herdrConfigPath() (string, error) {
+	if cfg := os.Getenv("HERDR_CONFIG_PATH"); cfg != "" {
+		return cfg, nil
+	}
+	h, err := userHome()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(h, ".config", "herdr", "config.toml"), nil
+}
+
+type piConfigValidChecker struct{}
+
+func (c *piConfigValidChecker) Name() string       { return "pi-config-valid" }
+func (c *piConfigValidChecker) Category() Category { return CategoryConfig }
+func (c *piConfigValidChecker) Check(_ context.Context) Result {
+	h, err := userHome()
+	if err != nil {
+		return unknown("pi-config-valid", "-", "-", "cannot determine home directory")
+	}
+	settings := filepath.Join(h, ".pi", "agent", "settings.json")
+	mcp := filepath.Join(h, ".pi", "agent", "mcp.json")
+	cache := filepath.Join(h, ".pi", "agent", "mcp-cache.json")
+	problems := []string{}
+
+	settingsRaw, err := os.ReadFile(settings)
+	if err != nil {
+		problems = append(problems, "settings.json is missing")
+	} else {
+		var v any
+		if json.Unmarshal(settingsRaw, &v) != nil {
+			problems = append(problems, "settings.json has invalid JSON")
+		}
+	}
+
+	mcpRaw, err := os.ReadFile(mcp)
+	var mcpParsed struct {
+		MCPServers map[string]any `json:"mcpServers"`
+	}
+	if err != nil {
+		problems = append(problems, "mcp.json is missing")
+	} else if json.Unmarshal(mcpRaw, &mcpParsed) != nil {
+		problems = append(problems, "mcp.json has invalid JSON")
+	}
+
+	if _, err := os.Stat(cache); err != nil {
+		problems = append(problems, "mcp-cache.json is missing")
+	}
+
+	if len(problems) > 0 {
+		return unknown("pi-config-valid", "invalid", "valid", "configuration problem: "+strings.Join(problems, "; "))
+	}
+	return ok("pi-config-valid", "valid", "valid",
+		fmt.Sprintf("%d MCP servers, cache is present", len(mcpParsed.MCPServers)))
+}
+
+type piConfigVersionChecker struct{}
+
+func (c *piConfigVersionChecker) Name() string       { return "pi-config-version" }
+func (c *piConfigVersionChecker) Category() Category { return CategoryConfig }
+func (c *piConfigVersionChecker) Check(ctx context.Context) Result {
+	if !commandExists("pi") {
+		return unknown("pi-config-version", "-", "-", "pi binary is not in PATH")
+	}
+	inst, err := execOut(ctx, 15*time.Second, "", "pi", "--version")
+	if err != nil || inst == "" {
+		return unknown("pi-config-version", "-", "-", "cannot read pi --version")
+	}
+	h, err := userHome()
+	if err != nil {
+		return unknown("pi-config-version", "-", "-", "cannot determine home directory")
+	}
+	settings := filepath.Join(h, ".pi", "agent", "settings.json")
+	raw, err := os.ReadFile(settings)
+	if err != nil {
+		return unknown("pi-config-version", "-", inst, "settings.json is missing")
+	}
+	var v struct {
+		LastChangelogVersion string `json:"lastChangelogVersion"`
+	}
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return unknown("pi-config-version", "-", inst, "settings.json has invalid JSON")
+	}
+	return evaluatePiConfigVersion(v.LastChangelogVersion, inst)
+}
+
+func evaluatePiConfigVersion(lastChangelogVersion, installedVersion string) Result {
+	if lastChangelogVersion == "" {
+		return needUpdate("pi-config-version", "unknown", installedVersion,
+			"pi /settings", "pi /reload", "lastChangelogVersion is missing in settings.json")
+	}
+	if lastChangelogVersion == installedVersion {
+		return ok("pi-config-version", lastChangelogVersion, installedVersion, "config is in sync with Pi version")
+	}
+	return needUpdate("pi-config-version", lastChangelogVersion, installedVersion,
+		"pi /settings", "pi /reload", "config version is older than installed Pi version")
+}
+
 func checkGhosttyConfig(ctx context.Context) Result {
 	if _, err := os.Stat(ghosttyBin); err != nil {
 		return unknown("ghostty-config", "-", "-", "Ghostty.app was not found")

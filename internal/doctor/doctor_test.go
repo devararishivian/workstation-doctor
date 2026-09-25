@@ -230,3 +230,35 @@ func TestToolCheckersInterface(t *testing.T) {
 	}
 }
 
+func TestConfigCheckers(t *testing.T) {
+	checkers := []Checker{
+		&ghosttyConfigValidChecker{},
+		&ghosttyConfigVersionChecker{},
+		&herdrConfigValidChecker{},
+		&herdrConfigVersionChecker{},
+		&piConfigValidChecker{},
+		&piConfigVersionChecker{},
+	}
+
+	for _, c := range checkers {
+		if c.Category() != CategoryConfig {
+			t.Errorf("checker %s category = %s, want %s", c.Name(), c.Category(), CategoryConfig)
+		}
+	}
+}
+
+func TestEvaluatePiConfigVersion(t *testing.T) {
+	// If lastChangelogVersion matches installed, status is OK
+	res := evaluatePiConfigVersion("0.87.1", "0.87.1")
+	if res.Status != StatusOK {
+		t.Errorf("got status %s, want %s", res.Status, StatusOK)
+	}
+
+	// If lastChangelogVersion is older, status is UPDATE
+	res = evaluatePiConfigVersion("0.85.0", "0.87.1")
+	if res.Status != StatusUpdate {
+		t.Errorf("got status %s, want %s", res.Status, StatusUpdate)
+	}
+}
+
+
