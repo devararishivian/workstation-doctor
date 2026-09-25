@@ -38,6 +38,23 @@ const (
 	StatusUnknown = "UNKNOWN"
 )
 
+// Category represents the audit component category.
+type Category string
+
+const (
+	CategoryTool   Category = "tool"
+	CategoryConfig Category = "config"
+	CategorySystem Category = "system"
+	CategorySkill  Category = "skill"
+)
+
+// Checker is the strategy interface for an audit component.
+type Checker interface {
+	Name() string
+	Category() Category
+	Check(ctx context.Context) Result
+}
+
 // Result is the check result of one component.
 type Result struct {
 	Component string
@@ -197,6 +214,61 @@ func FormatManual(results []Result) string {
 
 func ok(component, installed, latest, note string) Result {
 	return Result{Component: component, Installed: installed, Latest: latest, Status: StatusOK, Note: note}
+}
+
+type piVersionChecker struct{}
+
+func (c *piVersionChecker) Name() string       { return "pi" }
+func (c *piVersionChecker) Category() Category { return CategoryTool }
+func (c *piVersionChecker) Check(ctx context.Context) Result {
+	return checkPi(ctx)
+}
+
+type herdrVersionChecker struct{}
+
+func (c *herdrVersionChecker) Name() string       { return "herdr" }
+func (c *herdrVersionChecker) Category() Category { return CategoryTool }
+func (c *herdrVersionChecker) Check(ctx context.Context) Result {
+	return checkHerdr(ctx)
+}
+
+type ghosttyVersionChecker struct{}
+
+func (c *ghosttyVersionChecker) Name() string       { return "ghostty" }
+func (c *ghosttyVersionChecker) Category() Category { return CategoryTool }
+func (c *ghosttyVersionChecker) Check(ctx context.Context) Result {
+	return checkGhostty(ctx)
+}
+
+type npmPackageChecker struct {
+	label string
+	pkg   string
+}
+
+func newNpmPackageChecker(label, pkg string) *npmPackageChecker {
+	return &npmPackageChecker{label: label, pkg: pkg}
+}
+
+func (c *npmPackageChecker) Name() string       { return c.label }
+func (c *npmPackageChecker) Category() Category { return CategoryTool }
+func (c *npmPackageChecker) Check(ctx context.Context) Result {
+	return checkNpmPkg(ctx, c.label, c.pkg)
+}
+
+type serenaVersionChecker struct{}
+
+func (c *serenaVersionChecker) Name() string       { return "serena" }
+func (c *serenaVersionChecker) Category() Category { return CategoryTool }
+func (c *serenaVersionChecker) Check(ctx context.Context) Result {
+	return checkSerena(ctx)
+}
+
+type gortexVersionChecker struct{}
+
+func (c *gortexVersionChecker) Name() string       { return "gortex" }
+func (c *gortexVersionChecker) Category() Category { return CategoryTool }
+func (c *gortexVersionChecker) Check(ctx context.Context) Result {
+	return checkGortex(ctx)
 }
 
 func needUpdate(component, installed, latest, manual, fix, note string) Result {
@@ -379,6 +451,8 @@ func checkSerena(ctx context.Context) Result {
 		"uv tool upgrade serena-agent", "uv tool upgrade serena-agent", "uv tool is outdated")
 }
 
+var pypiClient = &http.Client{Timeout: 15 * time.Second}
+
 func pypiLatest(ctx context.Context, pkg string) (string, error) {
 	c, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
@@ -386,7 +460,7 @@ func pypiLatest(ctx context.Context, pkg string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("cannot build PyPI request: %w", err)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := pypiClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("cannot reach PyPI: %w", err)
 	}

@@ -208,3 +208,25 @@ func TestEvaluateHerdrPlugins(t *testing.T) {
 		})
 	}
 }
+
+func TestToolCheckersInterface(t *testing.T) {
+	checkers := []Checker{
+		&piVersionChecker{},
+		&herdrVersionChecker{},
+		&ghosttyVersionChecker{},
+		newNpmPackageChecker("opencode", "opencode-ai"),
+		newNpmPackageChecker("tokenjuice", "tokenjuice"),
+		&serenaVersionChecker{},
+		&gortexVersionChecker{},
+	}
+
+	for _, c := range checkers {
+		if c.Name() == "" {
+			t.Errorf("checker %T has empty Name()", c)
+		}
+		if c.Category() != CategoryTool {
+			t.Errorf("checker %s category = %s, want %s", c.Name(), c.Category(), CategoryTool)
+		}
+	}
+}
+
