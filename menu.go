@@ -21,7 +21,15 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+var (
+	spinnerFrames    = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+	catppuccinBlue   = tui.RGBColor(0x89, 0xB4, 0xFA) // #89B4FA
+	catppuccinGreen  = tui.RGBColor(0xA6, 0xE3, 0xA1) // #A6E3A1
+	catppuccinYellow = tui.RGBColor(0xF9, 0xE2, 0xAF) // #F9E2AF
+	catppuccinRed    = tui.RGBColor(0xF3, 0x8B, 0xA8) // #F38BA8
+	catppuccinMauve  = tui.RGBColor(0xCB, 0xA6, 0xF7) // #CBA6F7
+	catppuccinDim    = tui.RGBColor(0x93, 0x99, 0xB2) // #9399B2
+)
 
 // isInteractive reports whether both input and output are terminals.
 func isInteractive() bool {
@@ -395,36 +403,52 @@ func (d *doctorApp) Render(_ *tui.App) *tui.Element {
 }
 
 func (d *doctorApp) renderMenu() *tui.Element {
-	root := tui.New(
+	wrapper := tui.New(
 		tui.WithDisplay(tui.DisplayFlex),
 		tui.WithDirection(tui.Column),
+		tui.WithJustify(tui.JustifyCenter),
+		tui.WithAlign(tui.AlignCenter),
+		tui.WithHeightPercent(100.0),
+		tui.WithWidthPercent(100.0),
+	)
+
+	card := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Column),
+		tui.WithWidth(64),
 		tui.WithBorder(tui.BorderRounded),
-		tui.WithBorderStyle(tui.NewStyle().Foreground(tui.Cyan)),
+		tui.WithBorderStyle(tui.NewStyle().Foreground(catppuccinBlue)),
 		tui.WithPadding(1),
 		tui.WithGap(1),
 	)
 
 	title := tui.New(
 		tui.WithText("workstation-doctor"),
-		tui.WithTextStyle(tui.NewStyle().Foreground(tui.Cyan).Bold()),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinBlue).Bold()),
 	)
-	root.AddChild(title)
+	card.AddChild(title)
 
 	if summary := d.lastSummary.Get(); summary != "" {
 		sub := tui.New(
 			tui.WithText(summary),
-			tui.WithTextStyle(tui.NewStyle().Dim()),
+			tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
 		)
-		root.AddChild(sub)
+		card.AddChild(sub)
 	}
 
 	if msg := d.statusMsg.Get(); msg != "" {
 		st := tui.New(
 			tui.WithText(msg),
-			tui.WithTextStyle(tui.NewStyle().Foreground(tui.Yellow)),
+			tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow)),
 		)
-		root.AddChild(st)
+		card.AddChild(st)
 	}
+
+	sep := tui.New(
+		tui.WithText(strings.Repeat("─", 60)),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	)
+	card.AddChild(sep)
 
 	list := tui.New(
 		tui.WithDisplay(tui.DisplayFlex),
@@ -438,8 +462,8 @@ func (d *doctorApp) renderMenu() *tui.Element {
 		prefix := "   "
 		style := tui.NewStyle()
 		if isSelected {
-			prefix = " > "
-			style = tui.NewStyle().Foreground(tui.Green).Bold()
+			prefix = " ► "
+			style = tui.NewStyle().Foreground(catppuccinGreen).Bold()
 		}
 
 		line := tui.New(
@@ -448,24 +472,40 @@ func (d *doctorApp) renderMenu() *tui.Element {
 		)
 		list.AddChild(line)
 	}
-	root.AddChild(list)
+	card.AddChild(list)
+
+	card.AddChild(tui.New(
+		tui.WithText(strings.Repeat("─", 60)),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	))
 
 	hint := tui.New(
 		tui.WithText("Use ↑/↓ or j/k to navigate · Enter to select · q to quit"),
-		tui.WithTextStyle(tui.NewStyle().Dim()),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
 	)
-	root.AddChild(hint)
+	card.AddChild(hint)
 
-	return root
+	wrapper.AddChild(card)
+	return wrapper
 }
 
 func (d *doctorApp) renderRunning() *tui.Element {
 	frame := spinnerFrames[d.tickCount.Get()%len(spinnerFrames)]
-	root := tui.New(
+	wrapper := tui.New(
 		tui.WithDisplay(tui.DisplayFlex),
 		tui.WithDirection(tui.Column),
+		tui.WithJustify(tui.JustifyCenter),
+		tui.WithAlign(tui.AlignCenter),
+		tui.WithHeightPercent(100.0),
+		tui.WithWidthPercent(100.0),
+	)
+
+	card := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Column),
+		tui.WithWidth(60),
 		tui.WithBorder(tui.BorderRounded),
-		tui.WithBorderStyle(tui.NewStyle().Foreground(tui.Yellow)),
+		tui.WithBorderStyle(tui.NewStyle().Foreground(catppuccinYellow)),
 		tui.WithPadding(1),
 		tui.WithGap(1),
 		tui.WithAlign(tui.AlignCenter),
@@ -478,17 +518,18 @@ func (d *doctorApp) renderRunning() *tui.Element {
 
 	spinText := tui.New(
 		tui.WithText(fmt.Sprintf("%s %s", frame, msg)),
-		tui.WithTextStyle(tui.NewStyle().Foreground(tui.Yellow).Bold()),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow).Bold()),
 	)
-	root.AddChild(spinText)
+	card.AddChild(spinText)
 
 	hint := tui.New(
-		tui.WithText("All audit checks are running concurrently in background..."),
-		tui.WithTextStyle(tui.NewStyle().Dim()),
+		tui.WithText("Running 20 workstation health checks concurrently..."),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
 	)
-	root.AddChild(hint)
+	card.AddChild(hint)
 
-	return root
+	wrapper.AddChild(card)
+	return wrapper
 }
 
 func (d *doctorApp) renderResults() *tui.Element {
@@ -496,30 +537,38 @@ func (d *doctorApp) renderResults() *tui.Element {
 		tui.WithDisplay(tui.DisplayFlex),
 		tui.WithDirection(tui.Column),
 		tui.WithBorder(tui.BorderRounded),
-		tui.WithBorderStyle(tui.NewStyle().Foreground(tui.Cyan)),
+		tui.WithBorderStyle(tui.NewStyle().Foreground(catppuccinBlue)),
 		tui.WithPadding(1),
-		tui.WithGap(0),
+		tui.WithHeightPercent(100.0),
+		tui.WithWidthPercent(100.0),
 	)
 
-	headerText := "Audit Results"
+	headerText := "Workstation Audit Results"
 	if id := d.runID.Get(); id > 0 {
-		headerText += fmt.Sprintf(" · Saved run #%d", id)
+		headerText += fmt.Sprintf(" · Run #%d", id)
 	}
 	title := tui.New(
 		tui.WithText(headerText),
-		tui.WithTextStyle(tui.NewStyle().Foreground(tui.Cyan).Bold()),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinBlue).Bold()),
 	)
 	root.AddChild(title)
 
-	cols := tui.New(
-		tui.WithText(fmt.Sprintf("%-22s %-16s %-16s %-10s %s", "COMPONENT", "INSTALLED", "LATEST", "STATUS", "NOTE")),
-		tui.WithTextStyle(tui.NewStyle().Bold()),
+	// Column Headers Row
+	colHeader := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Row),
+		tui.WithHeight(1),
 	)
-	root.AddChild(cols)
+	colHeader.AddChild(tui.New(tui.WithWidth(26), tui.WithText("COMPONENT"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
+	colHeader.AddChild(tui.New(tui.WithWidth(18), tui.WithText("INSTALLED"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
+	colHeader.AddChild(tui.New(tui.WithWidth(18), tui.WithText("LATEST"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
+	colHeader.AddChild(tui.New(tui.WithWidth(12), tui.WithText("STATUS"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
+	colHeader.AddChild(tui.New(tui.WithFlexGrow(1.0), tui.WithText("NOTE"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
+	root.AddChild(colHeader)
 
 	sep := tui.New(
-		tui.WithText(strings.Repeat("─", 88)),
-		tui.WithTextStyle(tui.NewStyle().Dim()),
+		tui.WithText(strings.Repeat("─", 100)),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
 	)
 	root.AddChild(sep)
 
@@ -534,42 +583,75 @@ func (d *doctorApp) renderResults() *tui.Element {
 		visible = resList[offset:]
 	}
 
-	maxDisplay := 18
+	maxDisplay := 20
 	if len(visible) > maxDisplay {
 		visible = visible[:maxDisplay]
 	}
 
+	tableBox := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Column),
+		tui.WithFlexGrow(1.0),
+	)
+
 	for _, r := range visible {
-		statusStyle := tui.NewStyle()
+		row := tui.New(
+			tui.WithDisplay(tui.DisplayFlex),
+			tui.WithDirection(tui.Row),
+			tui.WithHeight(1),
+		)
+
+		var statusStyle tui.Style
 		switch r.Status {
 		case doctor.StatusOK:
-			statusStyle = statusStyle.Foreground(tui.Green)
+			statusStyle = tui.NewStyle().Foreground(catppuccinGreen).Bold()
 		case doctor.StatusUpdate:
-			statusStyle = statusStyle.Foreground(tui.Yellow).Bold()
+			statusStyle = tui.NewStyle().Foreground(catppuccinYellow).Bold()
 		default:
-			statusStyle = statusStyle.Foreground(tui.Red).Bold()
+			statusStyle = tui.NewStyle().Foreground(catppuccinRed).Bold()
 		}
 
-		line := tui.New(
-			tui.WithText(fmt.Sprintf("%-22s %-16s %-16s %-10s %s",
-				trunc(r.Component, 22), trunc(r.Installed, 16), trunc(r.Latest, 16), r.Status, r.Note)),
-			tui.WithTextStyle(statusStyle),
-		)
-		root.AddChild(line)
+		compStyle := tui.NewStyle().Bold()
+		row.AddChild(tui.New(tui.WithWidth(26), tui.WithText(trunc(r.Component, 24)), tui.WithTextStyle(compStyle)))
+		row.AddChild(tui.New(tui.WithWidth(18), tui.WithText(trunc(r.Installed, 16)), tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim))))
+		row.AddChild(tui.New(tui.WithWidth(18), tui.WithText(trunc(r.Latest, 16)), tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim))))
+		row.AddChild(tui.New(tui.WithWidth(12), tui.WithText(r.Status), tui.WithTextStyle(statusStyle)))
+		row.AddChild(tui.New(tui.WithFlexGrow(1.0), tui.WithText(r.Note)))
+
+		tableBox.AddChild(row)
 	}
+	root.AddChild(tableBox)
 
-	root.AddChild(sep)
+	root.AddChild(tui.New(
+		tui.WithText(strings.Repeat("─", 100)),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	))
 
+	// Summary Pills Row
 	s := doctor.Summarize(resList)
-	summaryLine := tui.New(
-		tui.WithText(fmt.Sprintf("Summary: %d OK · %d need update · %d unknown", s.OK, s.Update, s.Unknown)),
-		tui.WithTextStyle(tui.NewStyle().Bold()),
+	summaryRow := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Row),
+		tui.WithGap(2),
+		tui.WithHeight(1),
 	)
-	root.AddChild(summaryLine)
+	summaryRow.AddChild(tui.New(
+		tui.WithText(fmt.Sprintf("✓ %d OK", s.OK)),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinGreen).Bold()),
+	))
+	summaryRow.AddChild(tui.New(
+		tui.WithText(fmt.Sprintf("▲ %d NEED UPDATE", s.Update)),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow).Bold()),
+	))
+	summaryRow.AddChild(tui.New(
+		tui.WithText(fmt.Sprintf("? %d UNKNOWN", s.Unknown)),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinRed).Bold()),
+	))
+	root.AddChild(summaryRow)
 
 	nav := tui.New(
 		tui.WithText("[Esc / Enter / b: Back to Menu · ↑/↓: Scroll · q: Quit]"),
-		tui.WithTextStyle(tui.NewStyle().Dim()),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
 	)
 	root.AddChild(nav)
 
@@ -581,34 +663,61 @@ func (d *doctorApp) renderManual() *tui.Element {
 		tui.WithDisplay(tui.DisplayFlex),
 		tui.WithDirection(tui.Column),
 		tui.WithBorder(tui.BorderRounded),
-		tui.WithBorderStyle(tui.NewStyle().Foreground(tui.Yellow)),
+		tui.WithBorderStyle(tui.NewStyle().Foreground(catppuccinYellow)),
 		tui.WithPadding(1),
-		tui.WithGap(1),
+		tui.WithHeightPercent(100.0),
+		tui.WithWidthPercent(100.0),
 	)
 
 	title := tui.New(
 		tui.WithText("Ordered Manual Steps"),
-		tui.WithTextStyle(tui.NewStyle().Foreground(tui.Yellow).Bold()),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow).Bold()),
 	)
 	root.AddChild(title)
+
+	root.AddChild(tui.New(
+		tui.WithText(strings.Repeat("─", 80)),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	))
+
+	contentBox := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Column),
+		tui.WithGap(1),
+		tui.WithFlexGrow(1.0),
+	)
 
 	pending := doctor.Pending(d.results.Get())
 	if len(pending) == 0 {
 		msg := tui.New(tui.WithText("No action is needed. All components are current."))
-		root.AddChild(msg)
+		contentBox.AddChild(msg)
 	} else {
 		for i, r := range pending {
-			step := tui.New(
-				tui.WithText(fmt.Sprintf("%d. %s", i+1, r.Manual)),
-				tui.WithTextStyle(tui.NewStyle().Bold()),
+			stepCard := tui.New(
+				tui.WithDisplay(tui.DisplayFlex),
+				tui.WithDirection(tui.Column),
 			)
-			root.AddChild(step)
+			stepCard.AddChild(tui.New(
+				tui.WithText(fmt.Sprintf("%d. %s (%s)", i+1, r.Component, r.Note)),
+				tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinMauve).Bold()),
+			))
+			stepCard.AddChild(tui.New(
+				tui.WithText("   $ "+r.Manual),
+				tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow)),
+			))
+			contentBox.AddChild(stepCard)
 		}
 	}
+	root.AddChild(contentBox)
+
+	root.AddChild(tui.New(
+		tui.WithText(strings.Repeat("─", 80)),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	))
 
 	nav := tui.New(
 		tui.WithText("[Esc / Enter / b: Back to Menu · q: Quit]"),
-		tui.WithTextStyle(tui.NewStyle().Dim()),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
 	)
 	root.AddChild(nav)
 
@@ -620,48 +729,79 @@ func (d *doctorApp) renderHistory() *tui.Element {
 		tui.WithDisplay(tui.DisplayFlex),
 		tui.WithDirection(tui.Column),
 		tui.WithBorder(tui.BorderRounded),
-		tui.WithBorderStyle(tui.NewStyle().Foreground(tui.Cyan)),
+		tui.WithBorderStyle(tui.NewStyle().Foreground(catppuccinBlue)),
 		tui.WithPadding(1),
-		tui.WithGap(0),
+		tui.WithHeightPercent(100.0),
+		tui.WithWidthPercent(100.0),
 	)
 
 	title := tui.New(
 		tui.WithText("Run History (embedded SQLite)"),
-		tui.WithTextStyle(tui.NewStyle().Foreground(tui.Cyan).Bold()),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinBlue).Bold()),
 	)
 	root.AddChild(title)
 
-	cols := tui.New(
-		tui.WithText(fmt.Sprintf("%-6s %-20s %-5s %-8s %-8s %s", "RUN", "STARTED", "OK", "UPDATE", "UNKNOWN", "EXIT")),
-		tui.WithTextStyle(tui.NewStyle().Bold()),
+	// Column Headers Row
+	colHeader := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Row),
+		tui.WithHeight(1),
 	)
-	root.AddChild(cols)
+	colHeader.AddChild(tui.New(tui.WithWidth(10), tui.WithText("RUN"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
+	colHeader.AddChild(tui.New(tui.WithWidth(24), tui.WithText("STARTED"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
+	colHeader.AddChild(tui.New(tui.WithWidth(12), tui.WithText("OK"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinGreen))))
+	colHeader.AddChild(tui.New(tui.WithWidth(14), tui.WithText("UPDATE"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinYellow))))
+	colHeader.AddChild(tui.New(tui.WithWidth(14), tui.WithText("UNKNOWN"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinRed))))
+	colHeader.AddChild(tui.New(tui.WithFlexGrow(1.0), tui.WithText("EXIT"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
+	root.AddChild(colHeader)
 
 	sep := tui.New(
-		tui.WithText(strings.Repeat("─", 65)),
-		tui.WithTextStyle(tui.NewStyle().Dim()),
+		tui.WithText(strings.Repeat("─", 80)),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
 	)
 	root.AddChild(sep)
 
 	runs := d.historyRuns.Get()
+	tableBox := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Column),
+		tui.WithFlexGrow(1.0),
+	)
+
 	if len(runs) == 0 {
 		empty := tui.New(tui.WithText("No history recorded yet."))
-		root.AddChild(empty)
+		tableBox.AddChild(empty)
 	} else {
 		for _, r := range runs {
-			line := tui.New(
-				tui.WithText(fmt.Sprintf("#%-5d %-20s %-5d %-8d %-8d %d",
-					r.ID, shortTS(r.StartedAt), r.NOk, r.NUpdate, r.NUnknown, r.ExitCode)),
+			row := tui.New(
+				tui.WithDisplay(tui.DisplayFlex),
+				tui.WithDirection(tui.Row),
+				tui.WithHeight(1),
 			)
-			root.AddChild(line)
+			row.AddChild(tui.New(tui.WithWidth(10), tui.WithText(fmt.Sprintf("#%d", r.ID)), tui.WithTextStyle(tui.NewStyle().Bold())))
+			row.AddChild(tui.New(tui.WithWidth(24), tui.WithText(shortTS(r.StartedAt)), tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim))))
+			row.AddChild(tui.New(tui.WithWidth(12), tui.WithText(fmt.Sprintf("%d", r.NOk)), tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinGreen))))
+			row.AddChild(tui.New(tui.WithWidth(14), tui.WithText(fmt.Sprintf("%d", r.NUpdate)), tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow))))
+			row.AddChild(tui.New(tui.WithWidth(14), tui.WithText(fmt.Sprintf("%d", r.NUnknown)), tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinRed))))
+
+			exitStyle := tui.NewStyle()
+			if r.ExitCode != 0 {
+				exitStyle = exitStyle.Foreground(catppuccinYellow).Bold()
+			}
+			row.AddChild(tui.New(tui.WithFlexGrow(1.0), tui.WithText(fmt.Sprintf("%d", r.ExitCode)), tui.WithTextStyle(exitStyle)))
+			tableBox.AddChild(row)
 		}
 	}
+	root.AddChild(tableBox)
 
-	root.AddChild(sep)
+	root.AddChild(tui.New(
+		tui.WithText(strings.Repeat("─", 80)),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	))
 
 	nav := tui.New(
 		tui.WithText("[Esc / Enter / b: Back to Menu · q: Quit]"),
-		tui.WithTextStyle(tui.NewStyle().Dim()),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
 	)
 	root.AddChild(nav)
 
@@ -669,77 +809,132 @@ func (d *doctorApp) renderHistory() *tui.Element {
 }
 
 func (d *doctorApp) renderConfirmFix() *tui.Element {
-	root := tui.New(
+	wrapper := tui.New(
 		tui.WithDisplay(tui.DisplayFlex),
 		tui.WithDirection(tui.Column),
+		tui.WithJustify(tui.JustifyCenter),
+		tui.WithAlign(tui.AlignCenter),
+		tui.WithHeightPercent(100.0),
+		tui.WithWidthPercent(100.0),
+	)
+
+	card := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Column),
+		tui.WithWidth(68),
 		tui.WithBorder(tui.BorderRounded),
-		tui.WithBorderStyle(tui.NewStyle().Foreground(tui.Yellow)),
+		tui.WithBorderStyle(tui.NewStyle().Foreground(catppuccinYellow)),
 		tui.WithPadding(1),
 		tui.WithGap(1),
 	)
 
 	title := tui.New(
 		tui.WithText("Automatic Fix Confirmation"),
-		tui.WithTextStyle(tui.NewStyle().Foreground(tui.Yellow).Bold()),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow).Bold()),
 	)
-	root.AddChild(title)
+	card.AddChild(title)
+
+	card.AddChild(tui.New(
+		tui.WithText(strings.Repeat("─", 64)),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	))
 
 	pending := doctor.Pending(d.results.Get())
+	cmdBox := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Column),
+	)
 	for i, r := range pending {
-		line := tui.New(tui.WithText(fmt.Sprintf("%d. %s", i+1, r.Fix)))
-		root.AddChild(line)
+		line := tui.New(
+			tui.WithText(fmt.Sprintf("%d. %s", i+1, r.Fix)),
+			tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow)),
+		)
+		cmdBox.AddChild(line)
 	}
+	card.AddChild(cmdBox)
+
+	card.AddChild(tui.New(
+		tui.WithText(strings.Repeat("─", 64)),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	))
 
 	prompt := tui.New(
 		tui.WithText(fmt.Sprintf("Run the %d commands above in order? [y/N]", len(pending))),
-		tui.WithTextStyle(tui.NewStyle().Foreground(tui.Yellow).Bold()),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow).Bold()),
 	)
-	root.AddChild(prompt)
+	card.AddChild(prompt)
 
 	nav := tui.New(
-		tui.WithText("[Press 'y' to confirm execution · Press 'n' or Esc to cancel]"),
-		tui.WithTextStyle(tui.NewStyle().Dim()),
+		tui.WithText("[Press 'y' to confirm · Press 'n' or Esc to cancel]"),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
 	)
-	root.AddChild(nav)
+	card.AddChild(nav)
 
-	return root
+	wrapper.AddChild(card)
+	return wrapper
 }
 
 func (d *doctorApp) renderFixDone() *tui.Element {
-	root := tui.New(
+	wrapper := tui.New(
 		tui.WithDisplay(tui.DisplayFlex),
 		tui.WithDirection(tui.Column),
+		tui.WithJustify(tui.JustifyCenter),
+		tui.WithAlign(tui.AlignCenter),
+		tui.WithHeightPercent(100.0),
+		tui.WithWidthPercent(100.0),
+	)
+
+	card := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Column),
+		tui.WithWidth(68),
 		tui.WithBorder(tui.BorderRounded),
-		tui.WithBorderStyle(tui.NewStyle().Foreground(tui.Green)),
+		tui.WithBorderStyle(tui.NewStyle().Foreground(catppuccinGreen)),
 		tui.WithPadding(1),
 		tui.WithGap(1),
 	)
 
 	title := tui.New(
 		tui.WithText("Fix Execution Completed"),
-		tui.WithTextStyle(tui.NewStyle().Foreground(tui.Green).Bold()),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinGreen).Bold()),
 	)
-	root.AddChild(title)
+	card.AddChild(title)
+
+	card.AddChild(tui.New(
+		tui.WithText(strings.Repeat("─", 64)),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	))
 
 	logs := d.fixLogs.Get()
+	logBox := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Column),
+	)
 	for _, l := range logs {
 		style := tui.NewStyle()
 		if strings.HasPrefix(l, "OK:") {
-			style = style.Foreground(tui.Green)
+			style = style.Foreground(catppuccinGreen)
 		} else {
-			style = style.Foreground(tui.Red).Bold()
+			style = style.Foreground(catppuccinRed).Bold()
 		}
 		line := tui.New(tui.WithText(l), tui.WithTextStyle(style))
-		root.AddChild(line)
+		logBox.AddChild(line)
 	}
+	card.AddChild(logBox)
+
+	card.AddChild(tui.New(
+		tui.WithText(strings.Repeat("─", 64)),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	))
 
 	nav := tui.New(
 		tui.WithText("[Esc / Enter / b: Back to Menu · q: Quit]"),
-		tui.WithTextStyle(tui.NewStyle().Dim()),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
 	)
-	root.AddChild(nav)
+	card.AddChild(nav)
 
-	return root
+	wrapper.AddChild(card)
+	return wrapper
 }
 
 func fancyMenu(ctx context.Context, cmd *cli.Command) error {
