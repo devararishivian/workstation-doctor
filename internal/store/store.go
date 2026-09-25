@@ -3,6 +3,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -99,6 +100,13 @@ func Open(path string) (*Store, error) {
 		}
 		return nil, pingErr
 	}
+	if _, err := db.Exec("PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;"); err != nil {
+		pragmaErr := fmt.Errorf("store: set pragmas %s: %w", path, err)
+		if cerr := db.Close(); cerr != nil {
+			return nil, errors.Join(pragmaErr, fmt.Errorf("store: close %s: %w", path, cerr))
+		}
+		return nil, pragmaErr
+	}
 	if _, err := db.Exec(schema); err != nil {
 		migErr := fmt.Errorf("store: migrate %s: %w", path, err)
 		if cerr := db.Close(); cerr != nil {
@@ -122,14 +130,14 @@ func ts(t time.Time) string {
 }
 
 // RecordRun stores one check run with its results and returns the run ID.
-func (s *Store) RecordRun(start, end time.Time, nOk, nUpdate, nUnknown, exitCode int, results []ResultRow) (int64, error) {
-	tx, err := s.db.Begin()
+func (s *Store) RecordRun(ctx context.Context, start, end time.Time, nOk, nUpdate, nUnknown, exitCode int, results []ResultRow) (int64, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, fmt.Errorf("store: start run transaction: %w", err)
 	}
 	// Rollback is best effort. Commit decides the final result.
 	defer func() { _ = tx.Rollback() }()
-	res, err := tx.Exec(
+	res, err := tx.ExecContext(ctx,
 		`INSERT INTO check_runs(started_at, finished_at, n_ok, n_update, n_unknown, exit_code)
 		 VALUES(?,?,?,?,?,?)`,
 		ts(start), ts(end), nOk, nUpdate, nUnknown, exitCode)
@@ -140,11 +148,15 @@ func (s *Store) RecordRun(start, end time.Time, nOk, nUpdate, nUnknown, exitCode
 	if err != nil {
 		return 0, fmt.Errorf("store: run id: %w", err)
 	}
+	stmt, err := tx.PrepareContext(ctx,
+		`INSERT INTO check_results(run_id, component, installed, latest, status, note)
+		 VALUES(?,?,?,?,?,?)`)
+	if err != nil {
+		return 0, fmt.Errorf("store: prepare result statement: %w", err)
+	}
+	defer stmt.Close()
 	for _, r := range results {
-		if _, err := tx.Exec(
-			`INSERT INTO check_results(run_id, component, installed, latest, status, note)
-			 VALUES(?,?,?,?,?,?)`,
-			runID, r.Component, r.Installed, r.Latest, r.Status, r.Note); err != nil {
+		if _, err := stmt.ExecContext(ctx, runID, r.Component, r.Installed, r.Latest, r.Status, r.Note); err != nil {
 			return 0, fmt.Errorf("store: save result %s: %w", r.Component, err)
 		}
 	}
@@ -155,8 +167,8 @@ func (s *Store) RecordRun(start, end time.Time, nOk, nUpdate, nUnknown, exitCode
 }
 
 // RecordAction records one action (for example a fix command) in the history.
-func (s *Store) RecordAction(runID int64, kind, command, status, output string, start, end time.Time) error {
-	_, err := s.db.Exec(
+func (s *Store) RecordAction(ctx context.Context, runID int64, kind, command, status, output string, start, end time.Time) error {
+	_, err := s.db.ExecContext(ctx,
 		`INSERT INTO actions(run_id, kind, command, status, output, started_at, finished_at)
 		 VALUES(?,?,?,?,?,?,?)`,
 		runID, kind, command, status, output, ts(start), ts(end))
@@ -167,8 +179,8 @@ func (s *Store) RecordAction(runID int64, kind, command, status, output string, 
 }
 
 // ListRuns returns the newest N runs (newest first).
-func (s *Store) ListRuns(limit int) ([]Run, error) {
-	rows, err := s.db.Query(
+func (s *Store) ListRuns(ctx context.Context, limit int) ([]Run, error) {
+	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, started_at, finished_at, n_ok, n_update, n_unknown, exit_code
 		 FROM check_runs ORDER BY id DESC LIMIT ?`, limit)
 	if err != nil {
@@ -190,8 +202,8 @@ func (s *Store) ListRuns(limit int) ([]Run, error) {
 }
 
 // RunResults returns the component results of one run.
-func (s *Store) RunResults(runID int64) ([]ResultRow, error) {
-	rows, err := s.db.Query(
+func (s *Store) RunResults(ctx context.Context, runID int64) ([]ResultRow, error) {
+	rows, err := s.db.QueryContext(ctx,
 		`SELECT component, installed, latest, status, note
 		 FROM check_results WHERE run_id=? ORDER BY id`, runID)
 	if err != nil {
@@ -213,8 +225,8 @@ func (s *Store) RunResults(runID int64) ([]ResultRow, error) {
 }
 
 // RunActions returns the actions of one run.
-func (s *Store) RunActions(runID int64) ([]ActionRow, error) {
-	rows, err := s.db.Query(
+func (s *Store) RunActions(ctx context.Context, runID int64) ([]ActionRow, error) {
+	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, run_id, kind, command, status, output, started_at, finished_at
 		 FROM actions WHERE run_id=? ORDER BY id`, runID)
 	if err != nil {
