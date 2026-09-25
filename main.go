@@ -107,7 +107,7 @@ func runAndRecord(ctx context.Context, cmd *cli.Command) ([]doctor.Result, int64
 	}
 	var runID int64
 	if st := openStore(path); st != nil {
-		id, err := st.RecordRun(start, time.Now(), s.OK, s.Update, s.Unknown, exit, toRows(results))
+		id, err := st.RecordRun(ctx, start, time.Now(), s.OK, s.Update, s.Unknown, exit, toRows(results))
 		if cerr := st.Close(); cerr != nil {
 			diag.Warn().Err(cerr).Msg("failed to close history database")
 		}
@@ -226,7 +226,7 @@ func runFixFlow(ctx context.Context, out zerolog.Logger, path string, results []
 		}
 		out.Info().Msg(truncateOut(string(raw)) + statusLine(status, r.Fix))
 		if st != nil {
-			if recErr := st.RecordAction(runID, "fix", r.Fix, status, lastBytes(string(raw), 4096), start, end); recErr != nil {
+			if recErr := st.RecordAction(ctx, runID, "fix", r.Fix, status, lastBytes(string(raw), 4096), start, end); recErr != nil {
 				diag.Warn().Err(recErr).Msg("failed to record action")
 			}
 		}
@@ -264,7 +264,7 @@ func lastBytes(s string, n int) string {
 	return s[len(s)-n:]
 }
 
-func doHistory(_ context.Context, cmd *cli.Command) error {
+func doHistory(ctx context.Context, cmd *cli.Command) error {
 	out := newOutputLogger(cmd.Root().Writer)
 	path, err := dbPath(cmd)
 	if err != nil {
@@ -276,7 +276,7 @@ func doHistory(_ context.Context, cmd *cli.Command) error {
 	}
 	defer st.Close() //nolint:errcheck // close errors need no action when a command ends
 	if id := cmd.Int64("run"); id > 0 {
-		return showRun(out, st, id)
+		return showRun(ctx, out, st, id)
 	}
 	// Flags --limit and --run exist only on the history subcommand.
 	// They read as zero from the interactive menu (root context).
@@ -284,7 +284,7 @@ func doHistory(_ context.Context, cmd *cli.Command) error {
 	if limit <= 0 {
 		limit = 10
 	}
-	runs, err := st.ListRuns(limit)
+	runs, err := st.ListRuns(ctx, limit)
 	if err != nil {
 		return cli.Exit(fmt.Sprintf("cannot read history: %v", err), 2)
 	}
@@ -302,8 +302,8 @@ func doHistory(_ context.Context, cmd *cli.Command) error {
 	return nil
 }
 
-func showRun(out zerolog.Logger, st *store.Store, id int64) error {
-	results, err := st.RunResults(id)
+func showRun(ctx context.Context, out zerolog.Logger, st *store.Store, id int64) error {
+	results, err := st.RunResults(ctx, id)
 	if err != nil {
 		return cli.Exit(fmt.Sprintf("cannot read run #%d: %v", id, err), 2)
 	}
@@ -312,7 +312,7 @@ func showRun(out zerolog.Logger, st *store.Store, id int64) error {
 	}
 	out.Info().Msg("== Run #" + strconv.FormatInt(id, 10) + " ==")
 	out.Info().Msg(doctor.FormatTable(toDoctor(results)))
-	actions, err := st.RunActions(id)
+	actions, err := st.RunActions(ctx, id)
 	if err != nil {
 		return cli.Exit(fmt.Sprintf("cannot read actions: %v", err), 2)
 	}

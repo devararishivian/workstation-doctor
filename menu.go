@@ -141,7 +141,7 @@ func lastRunSummary(cmd *cli.Command) string {
 		return "No runs recorded yet"
 	}
 	defer st.Close() //nolint:errcheck // close errors do not matter for a best-effort subtitle
-	runs, err := st.ListRuns(1)
+	runs, err := st.ListRuns(context.Background(), 1)
 	if err != nil || len(runs) == 0 {
 		return "No runs recorded yet"
 	}
