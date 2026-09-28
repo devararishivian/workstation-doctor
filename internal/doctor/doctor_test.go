@@ -216,6 +216,7 @@ func TestToolCheckersInterface(t *testing.T) {
 		&piVersionChecker{},
 		&herdrVersionChecker{},
 		&ghosttyVersionChecker{},
+		&starshipVersionChecker{},
 		newNpmPackageChecker("opencode", "opencode-ai"),
 		newNpmPackageChecker("tokenjuice", "tokenjuice"),
 		&serenaVersionChecker{},
@@ -246,6 +247,53 @@ func TestConfigCheckers(t *testing.T) {
 		if c.Category() != CategoryConfig {
 			t.Errorf("checker %s category = %s, want %s", c.Name(), c.Category(), CategoryConfig)
 		}
+	}
+}
+
+func TestEvaluateStarshipVersion(t *testing.T) {
+	tests := []struct {
+		name       string
+		installed  string
+		latest     string
+		wantStatus string
+		wantManual string
+		wantFix    string
+		wantNote   string
+	}{
+		{
+			name:       "matching versions",
+			installed:  "1.26.0",
+			latest:     "1.26.0",
+			wantStatus: StatusOK,
+			wantNote:   "brew",
+		},
+		{
+			name:       "outdated version",
+			installed:  "1.25.0",
+			latest:     "1.26.0",
+			wantStatus: StatusUpdate,
+			wantManual: "brew upgrade starship",
+			wantFix:    "brew upgrade starship",
+			wantNote:   "brew formula is outdated",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := evaluateStarshipVersion(tt.installed, tt.latest)
+			if res.Status != tt.wantStatus {
+				t.Errorf("status = %q, want %q", res.Status, tt.wantStatus)
+			}
+			if tt.wantManual != "" && res.Manual != tt.wantManual {
+				t.Errorf("manual = %q, want %q", res.Manual, tt.wantManual)
+			}
+			if tt.wantFix != "" && res.Fix != tt.wantFix {
+				t.Errorf("fix = %q, want %q", res.Fix, tt.wantFix)
+			}
+			if res.Note != tt.wantNote {
+				t.Errorf("note = %q, want %q", res.Note, tt.wantNote)
+			}
+		})
 	}
 }
 

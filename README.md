@@ -1,6 +1,6 @@
 # workstation-doctor
 
-workstation-doctor audits developer tools on a workstation. The tool audits Pi, Herdr, Ghostty, MCP servers, and agent skills. It compares installed versions against latest versions. It also validates configuration files and configuration versions. It records every audit run and fix action in an embedded SQLite database.
+workstation-doctor audits developer tools on a workstation. The tool audits Pi, Herdr, Ghostty, Starship, MCP servers, and agent skills. It compares installed versions against latest versions. It also validates configuration files and configuration versions. It records every audit run and fix action in an embedded SQLite database.
 
 The tool uses Go 1.27, `github.com/urfave/cli/v3`, `github.com/grindlemire/go-tui`, and `modernc.org/sqlite`. The SQLite driver is pure Go. You do not need a C compiler to build this project.
 
@@ -31,7 +31,7 @@ Exit code 0 means all components are current and valid. Exit code 1 means update
 The tool runs all checks concurrently for fast execution. It organizes checks through the Strategy pattern.
 
 Tool version audits:
-- Pi, Herdr, Ghostty, opencode, tokenjuice, serena, and gortex.
+- Pi, Herdr, Ghostty, Starship, opencode, tokenjuice, serena, and gortex.
 - Outdated packages from `brew outdated` and `npm outdated -g`.
 - Extensions in `~/.pi/agent/npm` and the superpowers repository via `git ls-remote`.
 - Herdr integrations and installed Herdr plugins.
