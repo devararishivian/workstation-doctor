@@ -3,6 +3,8 @@ package doctor
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -309,6 +311,132 @@ func TestEvaluatePiConfigVersion(t *testing.T) {
 	if res.Status != StatusUpdate {
 		t.Errorf("got status %s, want %s", res.Status, StatusUpdate)
 	}
+}
+
+func TestEvaluatePiConfigValid(t *testing.T) {
+	t.Run("valid with mcp-adapter.json", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{"theme":"dark"}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "mcp-adapter.json"), []byte(`{"mcpServers":{"server1":{},"server2":{}},"secret":"do-not-leak"}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "mcp-cache.json"), []byte(`{}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		res := evaluatePiConfigValid(dir)
+		if res.Status != StatusOK {
+			t.Fatalf("expected StatusOK, got %s (note: %s)", res.Status, res.Note)
+		}
+		if !strings.Contains(res.Note, "2 MCP servers, cache is present") {
+			t.Errorf("unexpected note: %s", res.Note)
+		}
+		// Invariant: secrets must never leak into result text
+		if strings.Contains(res.Note, "do-not-leak") {
+			t.Errorf("secret leaked in note: %s", res.Note)
+		}
+	})
+
+	t.Run("valid with legacy mcp.json fallback", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "mcp.json"), []byte(`{"mcpServers":{"srv1":{}}}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "mcp-cache.json"), []byte(`{}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		res := evaluatePiConfigValid(dir)
+		if res.Status != StatusOK {
+			t.Fatalf("expected StatusOK, got %s (note: %s)", res.Status, res.Note)
+		}
+		if !strings.Contains(res.Note, "1 MCP servers, cache is present") {
+			t.Errorf("unexpected note: %s", res.Note)
+		}
+	})
+
+	t.Run("missing mcp-adapter.json and mcp.json", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "mcp-cache.json"), []byte(`{}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		res := evaluatePiConfigValid(dir)
+		if res.Status != StatusUnknown {
+			t.Fatalf("expected StatusUnknown, got %s", res.Status)
+		}
+		if !strings.Contains(res.Note, "mcp-adapter.json is missing") {
+			t.Errorf("expected missing mcp-adapter.json in note: %s", res.Note)
+		}
+	})
+
+	t.Run("invalid JSON in mcp-adapter.json", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "mcp-adapter.json"), []byte(`{broken`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "mcp-cache.json"), []byte(`{}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		res := evaluatePiConfigValid(dir)
+		if res.Status != StatusUnknown {
+			t.Fatalf("expected StatusUnknown, got %s", res.Status)
+		}
+		if !strings.Contains(res.Note, "mcp-adapter.json has invalid JSON") {
+			t.Errorf("expected invalid JSON note: %s", res.Note)
+		}
+	})
+
+	t.Run("invalid JSON in legacy mcp.json", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "mcp.json"), []byte(`{bad-legacy`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "mcp-cache.json"), []byte(`{}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		res := evaluatePiConfigValid(dir)
+		if res.Status != StatusUnknown {
+			t.Fatalf("expected StatusUnknown, got %s", res.Status)
+		}
+		if !strings.Contains(res.Note, "mcp.json has invalid JSON") {
+			t.Errorf("expected invalid JSON note: %s", res.Note)
+		}
+	})
+
+	t.Run("missing settings and cache", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "mcp-adapter.json"), []byte(`{"mcpServers":{}}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		res := evaluatePiConfigValid(dir)
+		if res.Status != StatusUnknown {
+			t.Fatalf("expected StatusUnknown, got %s", res.Status)
+		}
+		if !strings.Contains(res.Note, "settings.json is missing") {
+			t.Errorf("expected missing settings in note: %s", res.Note)
+		}
+		if !strings.Contains(res.Note, "mcp-cache.json is missing") {
+			t.Errorf("expected missing cache in note: %s", res.Note)
+		}
+	})
 }
 
 type mockChecker struct {

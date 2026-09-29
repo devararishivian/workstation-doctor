@@ -14,7 +14,7 @@ Data flows in one direction: `doctor` produces results, `main` logs results, and
 ## 2. Rules and invariants
 
 1. The `check` command must remain read-only. It only reads files and runs read-only subprocesses. System modifications can only happen in the `fix` command.
-2. Never print the content of `mcp.json`. The file can contain secrets. Only aggregate counts can appear in output.
+2. Never print the content of `mcp-adapter.json` or `mcp.json`. The files can contain secrets. Only aggregate counts can appear in output.
 3. Keep program output plain on stdout so other scripts can pipe it. Send diagnostic events to stderr with log levels through the `diag` logger.
 4. All user-facing text must be English. All commit messages must be English.
 5. `golangci-lint run ./...` must report 0 issues before any commit.

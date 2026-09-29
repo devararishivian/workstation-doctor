@@ -41,7 +41,7 @@ Configuration audits:
 - Ghostty configuration version against deprecated options.
 - Herdr configuration validity via `herdr config check`.
 - Herdr configuration version against modern section requirements.
-- Pi configuration validity for `settings.json`, `mcp.json`, and `mcp-cache.json`.
+- Pi configuration validity for `settings.json`, `mcp-adapter.json` (or `mcp.json`), and `mcp-cache.json`.
 - Pi configuration version comparing `lastChangelogVersion` against the installed Pi binary.
 
 Skill audits:
@@ -51,7 +51,7 @@ Skill audits:
 
 The `check` command is read-only. It changes no files and installs no packages. It uses the network only to read version metadata from package registries and git repositories.
 
-The tool never outputs the content of `mcp.json`. The file can contain secrets. Only server counts appear in output.
+The tool never outputs the content of `mcp-adapter.json` or `mcp.json`. The file can contain secrets. Only server counts appear in output.
 
 ## History database
 

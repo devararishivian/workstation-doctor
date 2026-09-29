@@ -1028,9 +1028,14 @@ func (c *piConfigValidChecker) Check(_ context.Context) Result {
 	if err != nil {
 		return unknown("pi-config-valid", "-", "-", "cannot determine home directory")
 	}
-	settings := filepath.Join(h, ".pi", "agent", "settings.json")
-	mcp := filepath.Join(h, ".pi", "agent", "mcp.json")
-	cache := filepath.Join(h, ".pi", "agent", "mcp-cache.json")
+	return evaluatePiConfigValid(filepath.Join(h, ".pi", "agent"))
+}
+
+func evaluatePiConfigValid(agentDir string) Result {
+	settings := filepath.Join(agentDir, "settings.json")
+	mcpAdapter := filepath.Join(agentDir, "mcp-adapter.json")
+	mcpLegacy := filepath.Join(agentDir, "mcp.json")
+	cache := filepath.Join(agentDir, "mcp-cache.json")
 	problems := []string{}
 
 	settingsRaw, err := os.ReadFile(settings)
@@ -1043,14 +1048,23 @@ func (c *piConfigValidChecker) Check(_ context.Context) Result {
 		}
 	}
 
-	mcpRaw, err := os.ReadFile(mcp)
+	mcpFilename := "mcp-adapter.json"
+	mcpRaw, err := os.ReadFile(mcpAdapter)
+	if err != nil && os.IsNotExist(err) {
+		if legacyRaw, lErr := os.ReadFile(mcpLegacy); lErr == nil {
+			mcpFilename = "mcp.json"
+			mcpRaw = legacyRaw
+			err = nil
+		}
+	}
+
 	var mcpParsed struct {
 		MCPServers map[string]any `json:"mcpServers"`
 	}
 	if err != nil {
-		problems = append(problems, "mcp.json is missing")
+		problems = append(problems, "mcp-adapter.json is missing")
 	} else if json.Unmarshal(mcpRaw, &mcpParsed) != nil {
-		problems = append(problems, "mcp.json has invalid JSON")
+		problems = append(problems, mcpFilename+" has invalid JSON")
 	}
 
 	if _, err := os.Stat(cache); err != nil {
