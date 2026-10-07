@@ -31,8 +31,8 @@ Current code map:
 - `internal/doctor/report.go` retains legacy report formatting.
 - `internal/store/store.go` owns SQLite access for audit runs, per-check results, and actions.
 
-Current audit entry points also record runs. Current maintenance executes shell strings through two paths. These are
-migration targets, not patterns to extend. Do not use live workstation commands to exercise them during development.
+Current audit entry points also record runs. Both legacy shell-string maintenance paths are blocked by the migration
+safety guard before audit, database, or subprocess execution. They remain migration targets, not patterns to extend. Do not use live workstation commands to exercise them during development.
 
 Approved target boundaries:
 

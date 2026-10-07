@@ -239,6 +239,11 @@ func (d *doctorApp) activateSelected() {
 }
 
 func (d *doctorApp) runAction(key string) {
+	if key == "fix" {
+		d.statusMsg.Set(legacyMaintenanceMessage)
+		d.mode.Set("menu")
+		return
+	}
 	switch key {
 	case "check":
 		d.mode.Set("running")
@@ -337,6 +342,11 @@ func (d *doctorApp) runAction(key string) {
 }
 
 func (d *doctorApp) executeFix() {
+	if err := legacyMaintenanceError(); err != nil {
+		d.statusMsg.Set(legacyMaintenanceMessage)
+		d.mode.Set("menu")
+		return
+	}
 	d.mode.Set("fixing")
 	d.statusMsg.Set("Executing automatic fix commands...")
 	results := d.results.Get()

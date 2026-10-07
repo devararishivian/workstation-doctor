@@ -179,6 +179,9 @@ func askConfirm(prompt string) bool {
 }
 
 func doFix(ctx context.Context, cmd *cli.Command, autoYes bool) error {
+	if err := legacyMaintenanceError(); err != nil {
+		return cli.Exit(legacyMaintenanceMessage, 2)
+	}
 	results, runID, err := runAndRecord(ctx, cmd)
 	if err != nil {
 		return cli.Exit(err.Error(), 2)
@@ -193,6 +196,9 @@ func doFix(ctx context.Context, cmd *cli.Command, autoYes bool) error {
 // runFixFlow executes the interactive part of fix on gathered results:
 // list, confirm, execute, record. Menu and subcommand paths share it.
 func runFixFlow(ctx context.Context, out zerolog.Logger, path string, results []doctor.Result, runID int64, autoYes bool) error {
+	if err := legacyMaintenanceError(); err != nil {
+		return cli.Exit(legacyMaintenanceMessage, 2)
+	}
 	out.Info().Msg(doctor.FormatTable(results))
 	pending := doctor.Pending(results)
 	out.Info().Msg("== Automatic fix ==")

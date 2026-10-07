@@ -1,7 +1,10 @@
 package main
 
 import (
+	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"workstation-doctor/internal/doctor"
@@ -16,6 +19,44 @@ func okResults() []doctor.Result {
 }
 
 // Program output must carry no escape codes, so pipes stay clean.
+func TestLegacyMaintenanceBlocked(t *testing.T) {
+	for _, name := range []string{"interactive", "auto yes", "direct flow"} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			t.Setenv("HOME", dir)
+			t.Setenv("PATH", dir)
+			t.Setenv("HERDR_CONFIG_PATH", filepath.Join(dir, "config.toml"))
+			db := filepath.Join(dir, "history.db")
+			marker := filepath.Join(dir, "executed")
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel() // Prevent any legacy command from launching in the RED run.
+			var output strings.Builder
+			var err error
+			if name == "direct flow" {
+				err = runFixFlow(ctx, newOutputLogger(&output), db, []doctor.Result{
+					{Component: "fixture", Status: doctor.StatusUpdate, Fix: "printf executed > " + marker},
+				}, 0, true)
+			} else {
+				cmd := &cli.Command{
+					Writer:         &output,
+					ExitErrHandler: func(context.Context, *cli.Command, error) {}, // Inspect errors without exiting the test process.
+					Flags:          []cli.Flag{&cli.StringFlag{Name: "db", Value: db}},
+					Action:         func(_ context.Context, cmd *cli.Command) error { return doFix(ctx, cmd, name == "auto yes") },
+				}
+				err = cmd.Run(context.Background(), []string{"doctor"})
+			}
+			if err == nil || err.Error() != "Automatic maintenance is unavailable during the architecture migration." {
+				t.Errorf("maintenance was not blocked: %v", err)
+			}
+			for _, path := range []string{db, marker} {
+				if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
+					t.Errorf("blocked maintenance touched %s: %v", path, statErr)
+				}
+			}
+		})
+	}
+}
+
 func TestOutputLoggerIsPlain(t *testing.T) {
 	var b strings.Builder
 	out := newOutputLogger(&b)
