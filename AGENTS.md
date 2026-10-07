@@ -19,7 +19,8 @@ behavior changes and commit them separately. Stop for review if a stage changes 
 
 ## 2. Current implementation versus approved target
 
-The redesign is in progress. Legacy behavior remains active while characterization and the doctor file split have landed.
+The redesign is in progress. Characterization, the doctor file split, typed models, and registry/proposal validation have
+landed. Legacy audit behavior remains active; legacy maintenance is blocked.
 Do not describe unimplemented packages or target behavior as already present.
 
 Current code map:
@@ -29,6 +30,8 @@ Current code map:
 - `internal/doctor/doctor.go` is the package overview. Integration checks live in focused files in the same package.
 - `internal/doctor/legacy_engine.go`, `legacy_model.go`, and `legacy_inspect.go` retain the old contracts and execution.
 - `internal/doctor/report.go` retains legacy report formatting.
+- `internal/doctor/model.go`, `registry.go`, `identity.go`, `actions.go`, and `limits.go` define the new validated contracts.
+- `internal/doctor/host.go` declares read-only I/O seams; the new audit engine is not wired into the TUI yet.
 - `internal/store/store.go` owns SQLite access for audit runs, per-check results, and actions.
 
 Current audit entry points also record runs. Both legacy shell-string maintenance paths are blocked by the migration
