@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -24,6 +25,55 @@ func TestFormatTableIsPlainWhenPiped(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Fatalf("table misses %q:\n%s", want, out)
 		}
+	}
+}
+
+func TestLegacyRegistryOrder(t *testing.T) {
+	t.Parallel()
+	want := []string{
+		"pi", "herdr", "ghostty", "starship", "opencode", "tokenjuice", "serena", "gortex",
+		"ghostty-config-valid", "ghostty-config-version", "herdr-config-valid", "herdr-config-version",
+		"pi-config-valid", "pi-config-version", "brew-outdated", "npm-outdated-g", "pi-packages",
+		"superpowers", "herdr-integr", "herdr-plugins", "skills",
+	}
+	engine := NewEngine()
+	got := make([]string, len(engine.checkers))
+	for i, checker := range engine.checkers {
+		got[i] = checker.Name()
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("registry order = %v, want %v", got, want)
+	}
+}
+
+func TestLegacyFormattingSnapshot(t *testing.T) {
+	t.Parallel()
+	results := []Result{
+		{Component: "pi", Installed: "1", Latest: "1", Status: StatusOK, Note: "current"},
+		{Component: "herdr", Installed: "1", Latest: "2", Status: StatusUpdate, Note: "available", Manual: "manual guidance"},
+		{Component: "ghostty", Installed: "-", Latest: "-", Status: StatusUnknown, Note: "unavailable"},
+	}
+	var rows []string
+	out := FormatTable(results)
+	if strings.Contains(out, "\x1b") {
+		t.Fatalf("table contains terminal controls: %q", out)
+	}
+	for line := range strings.SplitSeq(out, "\n") {
+		if fields := strings.Fields(line); len(fields) > 0 {
+			rows = append(rows, strings.Join(fields, " "))
+		}
+	}
+	want := []string{
+		"COMPONENT INSTALLED LATEST STATUS NOTE",
+		"----------------------------------------------------------------------------------------------",
+		"pi 1 1 OK current", "herdr 1 2 UPDATE available", "ghostty - - UNKNOWN unavailable",
+		"Summary: 1 OK · 1 need update · 1 unknown",
+	}
+	if !slices.Equal(rows, want) {
+		t.Fatalf("report rows = %q, want %q", rows, want)
+	}
+	if got := FormatManual(results); got != "\n== Ordered manual steps ==\n1. manual guidance\n" {
+		t.Fatalf("manual report = %q", got)
 	}
 }
 

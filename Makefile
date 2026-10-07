@@ -1,6 +1,8 @@
 BINARY := workstation-doctor
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -X main.version=$(VERSION)
+TEST_PKG ?= ./...
+TEST_RUN ?= .
 
 .PHONY: build test vet lint lint-fix fmt vuln run clean install help
 
@@ -11,7 +13,7 @@ build: ## build binary (version from git)
 	go build -ldflags "$(LDFLAGS)" -o $(BINARY) .
 
 test: ## run tests with data race detector
-	go test -race ./...
+	go test -race -run '$(TEST_RUN)' $(TEST_PKG)
 
 vet: ## run go vet
 	go vet ./...
