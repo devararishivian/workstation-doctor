@@ -19,13 +19,16 @@ behavior changes and commit them separately. Stop for review if a stage changes 
 
 ## 2. Current implementation versus approved target
 
-The redesign is approved but not implemented. Do not describe proposed packages or behavior as already present.
+The redesign is in progress. Legacy behavior remains active while characterization and the doctor file split have landed.
+Do not describe unimplemented packages or target behavior as already present.
 
 Current code map:
 
 - `main.go` owns `urfave/cli/v3` commands, process logging, audit recording, and the CLI fix flow.
 - `menu.go` owns Go-TUI rendering, the numbered non-TTY menu, state, and a separate fix flow.
-- `internal/doctor/doctor.go` combines the registry, engine, checks, results, and formatters.
+- `internal/doctor/doctor.go` is the package overview. Integration checks live in focused files in the same package.
+- `internal/doctor/legacy_engine.go`, `legacy_model.go`, and `legacy_inspect.go` retain the old contracts and execution.
+- `internal/doctor/report.go` retains legacy report formatting.
 - `internal/store/store.go` owns SQLite access for audit runs, per-check results, and actions.
 
 Current audit entry points also record runs. Current maintenance executes shell strings through two paths. These are
