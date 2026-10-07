@@ -31,7 +31,9 @@ Current code map:
 - `internal/doctor/legacy_engine.go`, `legacy_model.go`, and `legacy_inspect.go` retain the old contracts and execution.
 - `internal/doctor/report.go` retains legacy report formatting.
 - `internal/doctor/model.go`, `registry.go`, `identity.go`, `actions.go`, and `limits.go` define the new validated contracts.
-- `internal/doctor/host.go` declares read-only I/O seams; the new audit engine is not wired into the TUI yet.
+- `internal/doctor/host.go` provides bounded read-only command, HTTP, and file inspection.
+- `internal/doctor/audit_engine.go` provides registered discovery, bounded scheduling, fresh inspection, and cancellation.
+  The new engine is not wired into the TUI yet.
 - `internal/store/store.go` owns SQLite access for audit runs, per-check results, and actions.
 
 Current audit entry points also record runs. Both legacy shell-string maintenance paths are blocked by the migration
