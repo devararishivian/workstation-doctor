@@ -2,6 +2,14 @@
 
 workstation-doctor audits developer tools on a workstation. The tool audits Pi, Herdr, Ghostty, Starship, MCP servers, and agent skills. It compares installed versions against latest versions. It also validates configuration files and configuration versions. It records every audit run and fix action in an embedded SQLite database.
 
+## Redesign status
+
+The CLI and TUI still use the legacy audit checks and audit-history database. Automatic maintenance is blocked during the migration. Both `fix` commands and TUI maintenance requests stop before audit, database access, or subprocess execution.
+
+The new `internal/doctor` registry implements ten tool and manager checks beside the legacy application. It uses bounded local metadata and HTTP reads. It does not execute manager inventory commands, native previews, transient launchers, or maintenance. It is not connected to the CLI or TUI yet.
+
+Version detail depends on supported metadata. Homebrew formula receipts, linked global npm packages, uv receipt entrypoints, and Ghostty XML application metadata provide evidence. Other native layouts and Homebrew casks remain explicit limitations. Upstream releases are separate from manager update decisions. Installation times describe the current receipt revision, not first installation.
+
 The tool uses Go 1.27, `github.com/urfave/cli/v3`, `github.com/grindlemire/go-tui`, and `modernc.org/sqlite`. The SQLite driver is pure Go. You do not need a C compiler to build this project.
 
 The tool writes output to stdout as plain lines. Scripts can pipe this output. The tool writes diagnostic events to stderr with log levels.
@@ -15,10 +23,10 @@ To build and run the application:
 ```sh
 go build -o workstation-doctor .
 ./workstation-doctor                     # interactive Go-TUI menu (classic menu when piped)
-./workstation-doctor check               # read-only check and record run
+./workstation-doctor check               # legacy audit and record run
 ./workstation-doctor manual              # ordered manual steps
-./workstation-doctor fix                 # automatic fix with confirmation
-./workstation-doctor fix --yes           # automatic fix without confirmation
+./workstation-doctor fix                 # blocked during architecture migration
+./workstation-doctor fix --yes           # blocked during architecture migration
 ./workstation-doctor history             # run history
 ./workstation-doctor history --run 3     # detail of one run and its actions
 ./workstation-doctor --db /tmp/x.db check  # custom database path
@@ -28,11 +36,11 @@ Exit code 0 means all components are current and valid. Exit code 1 means update
 
 ## What it audits
 
-The tool runs all checks concurrently for fast execution. It organizes checks through the Strategy pattern.
+The following list describes legacy audit coverage. Some legacy assumptions are migration targets, not the new provider contracts. The new registry uses explicit definitions and bounded scheduling.
 
 Tool version audits:
 - Pi, Herdr, Ghostty, Starship, opencode, tokenjuice, serena, and gortex.
-- Outdated packages from `brew outdated` and `npm outdated -g`.
+- Legacy Homebrew and npm outdated reports. The legacy npm command does not establish explicit global scope.
 - Extensions in `~/.pi/agent/npm` and the superpowers repository via `git ls-remote`.
 - Herdr integrations and installed Herdr plugins.
 
@@ -49,7 +57,9 @@ Skill audits:
 
 ## Network and secrets
 
-The `check` command is read-only. It changes no files and installs no packages. It uses the network only to read version metadata from package registries and git repositories.
+The legacy `check` command still records audit history and invokes legacy inspection commands. It does not use the new provider safety contracts. Do not use a live audit to verify migration safety.
+
+The new audit engine does not access SQLite or execute maintenance. Its providers read bounded metadata without initializing manager caches or fetching into inspected Git checkouts. Tests use synthetic files and fake HTTP responses.
 
 The tool never outputs the content of `mcp-adapter.json` or `mcp.json`. The file can contain secrets. Only server counts appear in output.
 

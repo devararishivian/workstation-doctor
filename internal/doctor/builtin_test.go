@@ -1,6 +1,11 @@
 package doctor
 
-import "testing"
+import (
+	"context"
+	"errors"
+	"slices"
+	"testing"
+)
 
 func TestBuiltinToolFindings(t *testing.T) {
 	t.Parallel()
@@ -23,5 +28,41 @@ func TestBuiltinToolFindings(t *testing.T) {
 				t.Fatalf("missing %s", id)
 			}
 		})
+	}
+}
+
+func TestToolRegistryTenChecks(t *testing.T) {
+	t.Parallel()
+	defs := BuiltinDefinitions()
+	if err := ValidateDefinitions(defs); err != nil {
+		t.Fatal(err)
+	}
+	engine, err := NewAuditEngine(defs, DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := &Host{OS: "linux", Home: t.TempDir(), Path: t.TempDir(), Env: map[string]string{}}
+	host.RunRead = func(context.Context, Command) (CommandResult, error) {
+		t.Error("empty audit executed a process")
+		return CommandResult{}, errors.New("forbidden")
+	}
+	host.Fetch = func(context.Context, string) ([]byte, error) {
+		t.Error("empty audit requested metadata")
+		return nil, errors.New("forbidden")
+	}
+	report := engine.Audit(t.Context(), host, Scope{})
+	ids := []string{}
+	for _, check := range report.Checks {
+		ids = append(ids, check.ID)
+	}
+	want := []string{"pi", "herdr", "ghostty", "starship", "opencode", "tokenjuice", "serena", "gortex", "brew-outdated", "npm-outdated-g"}
+	if !slices.Equal(ids, want) || len(report.Integrations) != 10 || len(report.Findings) != 10 {
+		t.Fatalf("registry=%v integrations=%d findings=%d", ids, len(report.Integrations), len(report.Findings))
+	}
+	for _, f := range report.Findings {
+		if f.Outcome != OutcomeNotApplicable {
+			t.Fatalf("absent tool=%+v", f)
+		}
+		assertNoAutomatic(t, f)
 	}
 }

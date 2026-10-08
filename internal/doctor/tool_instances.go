@@ -48,7 +48,7 @@ func discoverNpmTool(ctx context.Context, host *Host, scope Scope, id, pkg strin
 	return d
 }
 
-func checkNpmTool(ctx context.Context, host *Host, _ Scope, instance Instance, id, pkg, reference string) []Finding {
+func checkNpmTool(ctx context.Context, host *Host, scope Scope, instance Instance, id, pkg, reference string) []Finding {
 	key := FindingKey{IntegrationID: id, CheckID: id, InstanceID: instance.ID}
 	f := Finding{Key: key, Outcome: OutcomeUnknown, Question: "Is a supported update available?", Explanation: "Automatic maintenance requires established manager ownership and supported version evidence.", Evidence: []Fact{instance.Version}, References: []PublicReference{{Kind: "documentation", Label: "Official project", URL: reference}}}
 	if ctx.Err() != nil {
@@ -93,7 +93,7 @@ func checkNpmTool(ctx context.Context, host *Host, _ Scope, instance Instance, i
 	if !ok {
 		return []Finding{f}
 	}
-	inventory, err := NpmInventory(ctx, host, Scope{})
+	inventory, err := NpmInventory(ctx, host, scope)
 	if err != nil || !samePath(inventory.Executable, manager) {
 		return []Finding{f}
 	}

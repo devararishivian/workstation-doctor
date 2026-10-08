@@ -1,6 +1,8 @@
 package doctor
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"golang.org/x/mod/semver"
@@ -51,6 +53,49 @@ func TestCompareVersions(t *testing.T) {
 				if got < 0 && want >= 0 || got > 0 && want <= 0 || got == 0 && want != 0 {
 					t.Fatalf("semver oracle=%d, implementation=%d", want, got)
 				}
+			}
+		})
+	}
+}
+
+func TestUpdateCandidateOrdering(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name, installed, candidate string
+		want                       Outcome
+		automatic                  bool
+	}{
+		{"new stable", "1.2.3", "1.2.4", OutcomeAttention, true},
+		{"local newer", "2.0.0", "1.9.9", OutcomeOK, false},
+		{"equal", "1.2.3", "1.2.3", OutcomeOK, false},
+		{"prerelease channel", "1.2.3-beta.1", "1.2.3", OutcomeAttention, false},
+		{"candidate prerelease", "1.2.3", "1.2.4-beta.1", OutcomeAttention, false},
+		{"unparsable", "1.2.3", "stable", OutcomeUnknown, false},
+		{"offline", "1.2.3", "", OutcomeUnknown, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			host, _ := syntheticNpmTool(t, "tokenjuice", "tokenjuice")
+			i := discoverTokenjuice(t.Context(), host, Scope{}).Instances[0]
+			i.Version.Value = tt.installed
+			host.Fetch = func(context.Context, string) ([]byte, error) {
+				if tt.candidate == "" {
+					return nil, errors.New("offline")
+				}
+				return []byte(`{"version":"` + tt.candidate + `"}`), nil
+			}
+			f := checkTokenjuiceInstance(t.Context(), host, Scope{}, i)[0]
+			if f.Outcome != tt.want {
+				t.Fatalf("outcome=%s want %s", f.Outcome, tt.want)
+			}
+			count := 0
+			for _, a := range f.Actions {
+				if a.Mode == ActionAutomatic {
+					count++
+				}
+			}
+			if (count > 0) != tt.automatic {
+				t.Fatalf("automatic=%d want %v", count, tt.automatic)
 			}
 		})
 	}
