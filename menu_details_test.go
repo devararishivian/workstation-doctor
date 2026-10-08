@@ -6,6 +6,7 @@ import (
 	"time"
 	"workstation-doctor/internal/app"
 	"workstation-doctor/internal/doctor"
+	"workstation-doctor/internal/store"
 )
 
 func TestIntegrationDetailAbsent(t *testing.T) {
@@ -139,5 +140,37 @@ func TestActionDetail(t *testing.T) {
 	}
 	if !strings.Contains(text, "Updates binary") {
 		t.Fatalf("missing side effect: %s", text)
+	}
+}
+
+func TestHistoryDetail(t *testing.T) {
+	rec := store.ActionRecord{
+		ID:            "act-123",
+		IntegrationID: "pi",
+		CheckID:       "update",
+		InstanceID:    "inst-1",
+		Label:         "Upgrade Pi",
+		Kind:          "Automatic",
+		Reason:        "Outdated version",
+		StartedAt:     time.Now().Add(-1 * time.Hour),
+		Plan: []store.PlannedStep{
+			{Index: 0, Label: "Step 1", Description: "Download and replace"},
+		},
+		Finish: &store.ActionFinish{
+			Execution:    store.ExecutionCompleted,
+			Verification: store.VerificationPassed,
+		},
+	}
+	detail := historyDetail(rec)
+	text := detailText(detail)
+
+	if !strings.Contains(text, "act-123") || !strings.Contains(text, "Upgrade Pi") {
+		t.Fatalf("missing id or label in history detail: %s", text)
+	}
+	if !strings.Contains(text, "Completed") || !strings.Contains(text, "Passed") {
+		t.Fatalf("missing execution or verification outcome: %s", text)
+	}
+	if !strings.Contains(text, "Download and replace") {
+		t.Fatalf("missing step in history detail: %s", text)
 	}
 }

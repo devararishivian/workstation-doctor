@@ -121,7 +121,7 @@ func (d *doctorApp) KeyMap() tui.KeyMap {
 			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
 			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.stop() }),
 		}
-	case "results", "manual", "history", "fix_done":
+	case "results", "manual", "fix_done":
 		return tui.KeyMap{
 			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.mode.Set("menu") }),
 			tui.On(tui.KeyEnter, func(_ tui.KeyEvent) { d.mode.Set("menu") }),
@@ -184,11 +184,73 @@ func (d *doctorApp) KeyMap() tui.KeyMap {
 			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.declinePreparedAction() }),
 			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.declinePreparedAction() }),
 		}
-	case "action_done":
+	case "history":
 		return tui.KeyMap{
-			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.mode.Set("results") }),
-			tui.On(tui.KeyEnter, func(_ tui.KeyEvent) { d.mode.Set("results") }),
-			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.mode.Set("results") }),
+			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.mode.Set("menu") }),
+			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.mode.Set("menu") }),
+			tui.On(tui.Rune('m'), func(_ tui.KeyEvent) { d.mode.Set("menu") }),
+			tui.On(tui.KeyEnter, func(_ tui.KeyEvent) { d.openSelectedHistoryDetail() }),
+			tui.On(tui.Rune('d'), func(_ tui.KeyEvent) { d.openSelectedHistoryDetail() }),
+			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
+			tui.On(tui.KeyDown, func(_ tui.KeyEvent) { d.scrollOffset.Update(func(v int) int { return v + 1 }) }),
+			tui.On(tui.Rune('j'), func(_ tui.KeyEvent) { d.scrollOffset.Update(func(v int) int { return v + 1 }) }),
+			tui.On(tui.KeyUp, func(_ tui.KeyEvent) {
+				d.scrollOffset.Update(func(v int) int {
+					if v > 0 {
+						return v - 1
+					}
+					return 0
+				})
+			}),
+			tui.On(tui.Rune('k'), func(_ tui.KeyEvent) {
+				d.scrollOffset.Update(func(v int) int {
+					if v > 0 {
+						return v - 1
+					}
+					return 0
+				})
+			}),
+		}
+	case "history_detail":
+		return tui.KeyMap{
+			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.mode.Set("history") }),
+			tui.On(tui.KeyEnter, func(_ tui.KeyEvent) { d.mode.Set("history") }),
+			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.mode.Set("history") }),
+			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
+			tui.On(tui.KeyDown, func(_ tui.KeyEvent) { d.scrollOffset.Update(func(v int) int { return v + 1 }) }),
+			tui.On(tui.Rune('j'), func(_ tui.KeyEvent) { d.scrollOffset.Update(func(v int) int { return v + 1 }) }),
+			tui.On(tui.KeyUp, func(_ tui.KeyEvent) {
+				d.scrollOffset.Update(func(v int) int {
+					if v > 0 {
+						return v - 1
+					}
+					return 0
+				})
+			}),
+			tui.On(tui.Rune('k'), func(_ tui.KeyEvent) {
+				d.scrollOffset.Update(func(v int) int {
+					if v > 0 {
+						return v - 1
+					}
+					return 0
+				})
+			}),
+		}
+	case "preview_migration":
+		return tui.KeyMap{
+			tui.On(tui.Rune('y'), func(_ tui.KeyEvent) { d.applyMigration(true) }),
+			tui.On(tui.Rune('Y'), func(_ tui.KeyEvent) { d.applyMigration(true) }),
+			tui.On(tui.Rune('n'), func(_ tui.KeyEvent) { d.applyMigration(false) }),
+			tui.On(tui.Rune('N'), func(_ tui.KeyEvent) { d.applyMigration(false) }),
+			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.applyMigration(false) }),
+			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.applyMigration(false) }),
+			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.applyMigration(false) }),
+		}
+	case "migration_done":
+		return tui.KeyMap{
+			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.mode.Set("menu") }),
+			tui.On(tui.KeyEnter, func(_ tui.KeyEvent) { d.mode.Set("menu") }),
+			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.mode.Set("menu") }),
 			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
 		}
 	case "confirm_fix":
@@ -219,7 +281,7 @@ func (d *doctorApp) runAction(key string) {
 	case "manual":
 		d.mode.Set("manual")
 	case "history":
-		d.mode.Set("history")
+		d.loadHistory()
 	case "quit":
 		d.stop()
 	}

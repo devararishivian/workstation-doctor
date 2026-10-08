@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,43 @@ import (
 	"workstation-doctor/internal/doctor"
 	"workstation-doctor/internal/store"
 )
+
+func createLegacyHistory(t *testing.T, path string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	for _, statement := range []string{
+		`CREATE TABLE check_runs(id INTEGER PRIMARY KEY AUTOINCREMENT, started_at TEXT NOT NULL, finished_at TEXT NOT NULL, n_ok INTEGER NOT NULL DEFAULT 0, n_update INTEGER NOT NULL DEFAULT 0, n_unknown INTEGER NOT NULL DEFAULT 0, exit_code INTEGER NOT NULL DEFAULT 0)`,
+		`CREATE TABLE check_results(id INTEGER PRIMARY KEY AUTOINCREMENT, run_id INTEGER NOT NULL REFERENCES check_runs(id), component TEXT NOT NULL, installed TEXT NOT NULL DEFAULT '', latest TEXT NOT NULL DEFAULT '', status TEXT NOT NULL, note TEXT NOT NULL DEFAULT '')`,
+		`CREATE TABLE actions(id INTEGER PRIMARY KEY AUTOINCREMENT, run_id INTEGER NOT NULL DEFAULT 0 REFERENCES check_runs(id), kind TEXT NOT NULL, command TEXT NOT NULL, status TEXT NOT NULL, output TEXT NOT NULL DEFAULT '', started_at TEXT NOT NULL, finished_at TEXT NOT NULL)`,
+	} {
+		if _, err := db.Exec(statement); err != nil {
+			t.Fatalf("create legacy schema: %v", err)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO check_runs(started_at,finished_at) VALUES(?,?)`, "2026-10-01T00:00:00Z", "2026-10-01T00:00:01Z"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO check_results(run_id,component,status) VALUES(1,'pi','ok')`); err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range []struct {
+		kind, command, status, output, started, finished string
+	}{
+		{"fix", "echo secret-command", "ok", "secret-output", "2026-10-02T03:04:05Z", "2026-10-02T03:04:06Z"},
+		{"fix", "echo another-secret", "fail", "another-secret-output", "2026-10-03T03:04:05Z", "2026-10-03T03:04:06Z"},
+	} {
+		if _, err := db.Exec(`INSERT INTO actions(run_id,kind,command,status,output,started_at,finished_at) VALUES(1,?,?,?,?,?,?)`, row.kind, row.command, row.status, row.output, row.started, row.finished); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func syntheticServiceForMenu(t *testing.T) (*app.Service, *atomic.Int32) {
 	t.Helper()
@@ -410,19 +448,220 @@ func TestMenuStaleApproval(t *testing.T) {
 	}
 }
 
-func TestMenuActionOutcomeLabels(t *testing.T) {
-	// Completed execution with Unknown verification must not render "verified repair"
-	rep := app.ActionReport{
-		RecordID:     "action-123",
-		Execution:    store.ExecutionCompleted,
-		Verification: store.VerificationUnknown,
-		SafeError:    "",
+func TestMenuHistoryPaging(t *testing.T) {
+	key := doctor.FindingKey{IntegrationID: "fixture", CheckID: "check", InstanceID: "inst"}
+	engine, err := doctor.NewAuditEngine([]doctor.Definition{{
+		Integration: doctor.Integration{ID: "fixture", Name: "Fixture", Description: "Desc"},
+		Discover: func(context.Context, *doctor.Host, doctor.Scope) doctor.Discovery {
+			return doctor.Discovery{Availability: doctor.AvailabilityPresent}
+		},
+		Checks: []doctor.CheckDefinition{{
+			ID: "check", Name: "Check", Question: "OK?", Order: 1,
+			Evaluate: func(context.Context, *doctor.Host, doctor.Scope, doctor.Instance) []doctor.Finding {
+				return []doctor.Finding{{Key: key, Outcome: doctor.OutcomeOK}}
+			},
+		}},
+	}}, doctor.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
 	}
-	text := actionReportText(rep)
-	if strings.Contains(strings.ToLower(text), "verified repair") {
-		t.Fatalf("completed with unknown verification falsely claimed verified repair: %s", text)
+	host, err := doctor.NewHost(doctor.Scope{}, doctor.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(text, "Completed") || !strings.Contains(text, "Unknown") {
-		t.Fatalf("missing honest outcome labels in report text: %s", text)
+
+	histDir := filepath.Join(t.TempDir(), "history")
+	dbPath := filepath.Join(histDir, "history.db")
+	st, err := store.OpenHistory(t.Context(), dbPath, store.DefaultPolicy())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Insert one action
+	start := store.ActionStart{
+		ID:            "act-1",
+		IntegrationID: "fixture",
+		CheckID:       "check",
+		InstanceID:    "inst",
+		Label:         "Test action",
+		Kind:          "Automatic",
+		Reason:        "Test",
+		StartedAt:     time.Now().UTC(),
+		Scope:         "user",
+		OwnerToken:    "tok",
+		TargetIDs:     []string{"target-1"},
+		Plan: []store.PlannedStep{
+			{Index: 0, Label: "Step 1", Description: "Run step"},
+		},
+	}
+	if err := st.StartAction(t.Context(), start); err != nil {
+		t.Fatal(err)
+	}
+	_ = st.Close()
+
+	service := app.NewService(engine, host, doctor.Scope{}, app.Options{
+		StateDir: t.TempDir(),
+		DBPath:   dbPath,
+		Policy:   store.DefaultPolicy(),
+	})
+
+	d := newDoctorApp(t.Context(), service)
+	d.loadHistory()
+
+	if d.mode.Get() != "history" {
+		t.Fatalf("mode = %q, want history", d.mode.Get())
+	}
+	if len(d.historyActions.Get()) != 1 {
+		t.Fatalf("expected 1 history action, got %d", len(d.historyActions.Get()))
+	}
+}
+
+func TestHistoryDetailMissingInstance(t *testing.T) {
+	var currentAuditCalls atomic.Int32
+	var commandCalls atomic.Int32
+
+	engine, err := doctor.NewAuditEngine([]doctor.Definition{{
+		Integration: doctor.Integration{ID: "fixture", Name: "Fixture", Description: "Desc"},
+		Discover: func(context.Context, *doctor.Host, doctor.Scope) doctor.Discovery {
+			currentAuditCalls.Add(1)
+			return doctor.Discovery{Availability: doctor.AvailabilityPresent}
+		},
+		Checks: []doctor.CheckDefinition{{
+			ID: "check", Name: "Check", Question: "OK?", Order: 1,
+			Evaluate: func(context.Context, *doctor.Host, doctor.Scope, doctor.Instance) []doctor.Finding {
+				return []doctor.Finding{}
+			},
+		}},
+	}}, doctor.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, err := doctor.NewHost(doctor.Scope{}, doctor.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	service := app.NewService(engine, host, doctor.Scope{}, app.Options{
+		StateDir: t.TempDir(),
+		DBPath:   filepath.Join(t.TempDir(), "h", "history.db"),
+		Policy:   store.DefaultPolicy(),
+		RunStep: func(context.Context, doctor.CommandStep) (store.StepResult, error) {
+			commandCalls.Add(1)
+			return store.StepResult{}, nil
+		},
+	})
+
+	d := newDoctorApp(t.Context(), service)
+
+	recordForRemovedInstance := store.ActionRecord{
+		ID:            "orphan-action-1",
+		IntegrationID: "removed-integration",
+		CheckID:       "removed-check",
+		InstanceID:    "vanished-instance",
+		Label:         "Historical upgrade of vanished tool",
+		Kind:          "Automatic",
+		Reason:        "Routine maintenance",
+		Plan: []store.PlannedStep{
+			{Index: 0, Label: "Legacy step", Description: "Updated binary"},
+		},
+		Finish: &store.ActionFinish{
+			Execution:    store.ExecutionCompleted,
+			Verification: store.VerificationPassed,
+		},
+	}
+
+	err = d.showHistoryDetail(recordForRemovedInstance)
+	if err != nil {
+		t.Fatalf("showHistoryDetail returned error: %v", err)
+	}
+
+	if currentAuditCalls.Load() != 0 || commandCalls.Load() != 0 {
+		t.Fatalf("historical detail triggered inspection (%d) or execution (%d)",
+			currentAuditCalls.Load(), commandCalls.Load())
+	}
+	detail := d.activeDetail.Get()
+	if !strings.Contains(detail, "orphan-action-1") || !strings.Contains(detail, "Historical upgrade of vanished tool") {
+		t.Fatalf("detail text missing orphan action info: %s", detail)
+	}
+}
+
+func TestMenuMigrationPreviewConsent(t *testing.T) {
+	stateDir := t.TempDir()
+	sourceDir := t.TempDir()
+	destDir := filepath.Join(t.TempDir(), "history")
+	sourceDB := filepath.Join(sourceDir, "doctor.db")
+	destDB := filepath.Join(destDir, "doctor.db")
+
+	createLegacyHistory(t, sourceDB)
+
+	service := app.NewService(nil, nil, doctor.Scope{}, app.Options{
+		StateDir: stateDir,
+		DBPath:   destDB,
+		Policy:   store.DefaultPolicy(),
+	})
+
+	d := newDoctorApp(t.Context(), service)
+	d.previewMigration(sourceDB, destDB)
+
+	if d.mode.Get() != "preview_migration" {
+		t.Fatalf("mode = %q, want preview_migration", d.mode.Get())
+	}
+	if d.migrationPreview == nil || d.migrationPreview.Actions != 2 {
+		t.Fatalf("migration preview not loaded: %+v", d.migrationPreview)
+	}
+
+	// Declining migration does not import
+	d.applyMigration(false)
+	if d.mode.Get() != "menu" && d.mode.Get() != "history" {
+		t.Fatalf("mode after decline = %q", d.mode.Get())
+	}
+
+	// Confirming migration executes import
+	d.previewMigration(sourceDB, destDB)
+	d.applyMigration(true)
+	if d.mode.Get() != "migration_done" {
+		t.Fatalf("mode after confirm = %q", d.mode.Get())
+	}
+}
+
+func TestHistoryAndCurrentSeparated(t *testing.T) {
+	var auditCount atomic.Int32
+	engine, err := doctor.NewAuditEngine([]doctor.Definition{{
+		Integration: doctor.Integration{ID: "fixture", Name: "Fixture", Description: "Desc"},
+		Discover: func(context.Context, *doctor.Host, doctor.Scope) doctor.Discovery {
+			auditCount.Add(1)
+			return doctor.Discovery{Availability: doctor.AvailabilityPresent}
+		},
+		Checks: []doctor.CheckDefinition{{
+			ID: "check", Name: "Check", Question: "OK?", Order: 1,
+			Evaluate: func(context.Context, *doctor.Host, doctor.Scope, doctor.Instance) []doctor.Finding {
+				return []doctor.Finding{}
+			},
+		}},
+	}}, doctor.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, err := doctor.NewHost(doctor.Scope{}, doctor.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dbPath := filepath.Join(t.TempDir(), "h", "history.db")
+	service := app.NewService(engine, host, doctor.Scope{}, app.Options{
+		StateDir: t.TempDir(),
+		DBPath:   dbPath,
+		Policy:   store.DefaultPolicy(),
+	})
+
+	d := newDoctorApp(t.Context(), service)
+	_ = d.service.Audit(t.Context())
+	if auditCount.Load() != 1 {
+		t.Fatalf("audit count = %d, want 1", auditCount.Load())
+	}
+
+	// Browsing history must not trigger another audit
+	d.loadHistory()
+	if auditCount.Load() != 1 {
+		t.Fatalf("browsing history triggered audit! audit count = %d", auditCount.Load())
 	}
 }

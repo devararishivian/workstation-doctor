@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"workstation-doctor/internal/doctor"
+	"workstation-doctor/internal/store"
 
 	tui "github.com/grindlemire/go-tui"
 )
@@ -24,12 +25,16 @@ func (d *doctorApp) Render(_ *tui.App) *tui.Element {
 		return d.renderConfirmFix()
 	case "fix_done":
 		return d.renderFixDone()
-	case "detail":
+	case "detail", "history_detail":
 		return d.renderDetail()
 	case "preview_action":
 		return d.renderPreviewAction()
 	case "action_done":
 		return d.renderActionDone()
+	case "preview_migration":
+		return d.renderPreviewMigration()
+	case "migration_done":
+		return d.renderMigrationDone()
 	default:
 		return d.renderMenu()
 	}
@@ -389,11 +394,200 @@ func (d *doctorApp) renderHistory() *tui.Element {
 	)
 	root.AddChild(title)
 
-	empty := tui.New(tui.WithText("No maintenance actions recorded yet."))
-	root.AddChild(empty)
+	// Column Headers Row
+	colHeader := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Row),
+		tui.WithHeight(1),
+	)
+	colHeader.AddChild(tui.New(tui.WithWidth(22), tui.WithText("STARTED"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
+	colHeader.AddChild(tui.New(tui.WithWidth(16), tui.WithText("ACTION ID"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
+	colHeader.AddChild(tui.New(tui.WithWidth(14), tui.WithText("EXECUTION"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
+	colHeader.AddChild(tui.New(tui.WithWidth(14), tui.WithText("VERIFICATION"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
+	colHeader.AddChild(tui.New(tui.WithFlexGrow(1.0), tui.WithText("LABEL"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
+	root.AddChild(colHeader)
+
+	sep := tui.New(
+		tui.WithText(strings.Repeat("─", 100)),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	)
+	root.AddChild(sep)
+
+	actions := d.historyActions.Get()
+	tableBox := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Column),
+		tui.WithFlexGrow(1.0),
+	)
+
+	if len(actions) == 0 {
+		empty := tui.New(tui.WithText("No maintenance actions recorded yet."))
+		tableBox.AddChild(empty)
+	} else {
+		offset := d.scrollOffset.Get()
+		if offset > len(actions)-1 && len(actions) > 0 {
+			offset = len(actions) - 1
+		}
+		visible := actions
+		if offset > 0 && offset < len(actions) {
+			visible = actions[offset:]
+		}
+		maxDisplay := 20
+		if len(visible) > maxDisplay {
+			visible = visible[:maxDisplay]
+		}
+
+		for _, a := range visible {
+			row := tui.New(
+				tui.WithDisplay(tui.DisplayFlex),
+				tui.WithDirection(tui.Row),
+				tui.WithHeight(1),
+			)
+			row.AddChild(tui.New(tui.WithWidth(22), tui.WithText(a.StartedAt.Format("2006-01-02 15:04:05")), tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim))))
+			row.AddChild(tui.New(tui.WithWidth(16), tui.WithText(trunc(a.ID, 14)), tui.WithTextStyle(tui.NewStyle().Bold())))
+
+			execStr := "Running"
+			execStyle := tui.NewStyle().Foreground(catppuccinYellow)
+			verStr := ""
+			verStyle := tui.NewStyle().Foreground(catppuccinDim)
+
+			if a.Finish != nil {
+				execStr = string(a.Finish.Execution)
+				switch a.Finish.Execution {
+				case store.ExecutionCompleted:
+					execStyle = tui.NewStyle().Foreground(catppuccinGreen).Bold()
+				case store.ExecutionFailed, store.ExecutionCanceled:
+					execStyle = tui.NewStyle().Foreground(catppuccinRed).Bold()
+				}
+
+				verStr = string(a.Finish.Verification)
+				switch a.Finish.Verification {
+				case store.VerificationPassed:
+					verStyle = tui.NewStyle().Foreground(catppuccinGreen)
+				case store.VerificationFailed:
+					verStyle = tui.NewStyle().Foreground(catppuccinRed)
+				}
+			}
+
+			row.AddChild(tui.New(tui.WithWidth(14), tui.WithText(execStr), tui.WithTextStyle(execStyle)))
+			row.AddChild(tui.New(tui.WithWidth(14), tui.WithText(verStr), tui.WithTextStyle(verStyle)))
+			row.AddChild(tui.New(tui.WithFlexGrow(1.0), tui.WithText(a.Label)))
+
+			tableBox.AddChild(row)
+		}
+	}
+	root.AddChild(tableBox)
+
+	root.AddChild(tui.New(
+		tui.WithText(strings.Repeat("─", 100)),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	))
 
 	nav := tui.New(
-		tui.WithText("[Esc / Enter / b: Back to Menu · q: Quit]"),
+		tui.WithText("[Esc / b / m: Back to Menu · Enter / d: View Details · ↑/↓: Scroll · q: Quit]"),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	)
+	root.AddChild(nav)
+
+	return root
+}
+
+func (d *doctorApp) renderPreviewMigration() *tui.Element {
+	root := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Column),
+		tui.WithBorder(tui.BorderRounded),
+		tui.WithBorderStyle(tui.NewStyle().Foreground(catppuccinYellow)),
+		tui.WithPadding(1),
+		tui.WithHeightPercent(100.0),
+		tui.WithWidthPercent(100.0),
+	)
+
+	title := tui.New(
+		tui.WithText("Legacy History Migration Preview"),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow).Bold()),
+	)
+	root.AddChild(title)
+
+	root.AddChild(tui.New(
+		tui.WithText(strings.Repeat("─", 80)),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	))
+
+	contentBox := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Column),
+		tui.WithGap(1),
+		tui.WithFlexGrow(1.0),
+	)
+
+	if d.migrationPreview != nil {
+		p := d.migrationPreview
+		contentBox.AddChild(tui.New(tui.WithText(fmt.Sprintf("Source Database:      %s", p.Source))))
+		contentBox.AddChild(tui.New(tui.WithText(fmt.Sprintf("Destination Database: %s", p.Destination))))
+		contentBox.AddChild(tui.New(tui.WithText(fmt.Sprintf("Eligible Actions:     %d", p.Actions))))
+		contentBox.AddChild(tui.New(tui.WithText(fmt.Sprintf("Excluded Check Runs:  %d (audit snapshots excluded)", p.CheckRuns))))
+		contentBox.AddChild(tui.New(tui.WithText(fmt.Sprintf("Source Fingerprint:   %s", p.SourceFingerprint))))
+	}
+	root.AddChild(contentBox)
+
+	root.AddChild(tui.New(
+		tui.WithText(strings.Repeat("─", 80)),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	))
+
+	prompt := tui.New(
+		tui.WithText("Proceed with legacy history import? [Press 'y' to confirm · Press 'n' / Esc to cancel]"),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow).Bold()),
+	)
+	root.AddChild(prompt)
+
+	return root
+}
+
+func (d *doctorApp) renderMigrationDone() *tui.Element {
+	root := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Column),
+		tui.WithBorder(tui.BorderRounded),
+		tui.WithBorderStyle(tui.NewStyle().Foreground(catppuccinGreen)),
+		tui.WithPadding(1),
+		tui.WithHeightPercent(100.0),
+		tui.WithWidthPercent(100.0),
+	)
+
+	title := tui.New(
+		tui.WithText("Migration Completed"),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinGreen).Bold()),
+	)
+	root.AddChild(title)
+
+	root.AddChild(tui.New(
+		tui.WithText(strings.Repeat("─", 80)),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	))
+
+	contentBox := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Column),
+		tui.WithGap(1),
+		tui.WithFlexGrow(1.0),
+	)
+
+	if d.migrationResult != nil {
+		r := d.migrationResult
+		contentBox.AddChild(tui.New(tui.WithText(fmt.Sprintf("Imported Actions: %d", r.Imported))))
+		contentBox.AddChild(tui.New(tui.WithText(fmt.Sprintf("Preserved Source: %s", r.PreservedSource))))
+	}
+	root.AddChild(contentBox)
+
+	root.AddChild(tui.New(
+		tui.WithText(strings.Repeat("─", 80)),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	))
+
+	nav := tui.New(
+		tui.WithText("[Esc / Enter / b: Return to Menu · q: Quit]"),
 		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
 	)
 	root.AddChild(nav)

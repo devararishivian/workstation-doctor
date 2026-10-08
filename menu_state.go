@@ -39,6 +39,9 @@ type doctorApp struct {
 	activeDetail      *tui.State[string]
 	preparedAction    *app.PreparedAction
 	actionReport      *app.ActionReport
+	historyActions    *tui.State[[]store.ActionRecord]
+	migrationPreview  *store.MigrationPreview
+	migrationResult   *store.MigrationResult
 	currentGeneration uint64
 	auditCancel       context.CancelFunc
 
@@ -60,21 +63,22 @@ var (
 func newDoctorApp(ctx context.Context, service *app.Service) *doctorApp {
 	ctx, cancel := context.WithCancel(ctx)
 	d := &doctorApp{
-		ctx:          ctx,
-		cancel:       cancel,
-		service:      service,
-		mode:         tui.NewState("menu"),
-		selectedMenu: tui.NewState(0),
-		scrollOffset: tui.NewState(0),
-		statusMsg:    tui.NewState(""),
-		lastSummary:  tui.NewState(""),
-		tickCount:    tui.NewState(0),
-		report:       tui.NewState(doctor.AuditReport{}),
-		activeDetail: tui.NewState(""),
-		results:      tui.NewState([]doctor.Result{}),
-		runID:        tui.NewState(int64(0)),
-		historyRuns:  tui.NewState([]store.Run{}),
-		fixLogs:      tui.NewState([]string{}),
+		ctx:            ctx,
+		cancel:         cancel,
+		service:        service,
+		mode:           tui.NewState("menu"),
+		selectedMenu:   tui.NewState(0),
+		scrollOffset:   tui.NewState(0),
+		statusMsg:      tui.NewState(""),
+		lastSummary:    tui.NewState(""),
+		tickCount:      tui.NewState(0),
+		report:         tui.NewState(doctor.AuditReport{}),
+		activeDetail:   tui.NewState(""),
+		historyActions: tui.NewState([]store.ActionRecord{}),
+		results:        tui.NewState([]doctor.Result{}),
+		runID:          tui.NewState(int64(0)),
+		historyRuns:    tui.NewState([]store.Run{}),
+		fixLogs:        tui.NewState([]string{}),
 		items: []menuItem{
 			{key: "check", shortcut: "1", label: "Check status (read-only)"},
 			{key: "manual", shortcut: "2", label: "Show ordered manual steps"},
@@ -96,6 +100,7 @@ func (d *doctorApp) BindApp(app *tui.App) {
 	d.tickCount.BindApp(app)
 	d.report.BindApp(app)
 	d.activeDetail.BindApp(app)
+	d.historyActions.BindApp(app)
 	d.results.BindApp(app)
 	d.runID.BindApp(app)
 	d.historyRuns.BindApp(app)
@@ -247,6 +252,76 @@ func (d *doctorApp) prepareFirstAction() {
 		}
 	}
 	d.statusMsg.Set("No automatic maintenance action available for this finding")
+}
+
+func (d *doctorApp) loadHistory() {
+	if d.service == nil {
+		d.statusMsg.Set("Service unavailable")
+		return
+	}
+	page, err := d.service.History(d.ctx, store.ActionQuery{Limit: 50})
+	if err != nil {
+		d.statusMsg.Set("Failed to load history: " + err.Error())
+		return
+	}
+	d.historyActions.Set(page.Items)
+	d.scrollOffset.Set(0)
+	d.mode.Set("history")
+}
+
+func (d *doctorApp) showHistoryDetail(record store.ActionRecord) error {
+	detail := historyDetail(record)
+	d.activeDetail.Set(detailText(detail))
+	d.scrollOffset.Set(0)
+	d.mode.Set("history_detail")
+	return nil
+}
+
+func (d *doctorApp) previewMigration(source, destination string) {
+	if d.service == nil {
+		d.statusMsg.Set("Service unavailable")
+		return
+	}
+	prev, err := d.service.PreviewMigration(d.ctx, source, destination)
+	if err != nil {
+		d.statusMsg.Set("Preview migration failed: " + err.Error())
+		return
+	}
+	d.migrationPreview = &prev
+	d.scrollOffset.Set(0)
+	d.mode.Set("preview_migration")
+}
+
+func (d *doctorApp) applyMigration(confirmed bool) {
+	if !confirmed || d.migrationPreview == nil || d.service == nil {
+		d.migrationPreview = nil
+		d.mode.Set("menu")
+		return
+	}
+	prev := *d.migrationPreview
+	res, err := d.service.MigrateLegacy(d.ctx, prev, true)
+	if err != nil {
+		d.statusMsg.Set("Migration failed: " + err.Error())
+		d.migrationPreview = nil
+		d.mode.Set("menu")
+		return
+	}
+	d.migrationPreview = nil
+	d.migrationResult = &res
+	d.scrollOffset.Set(0)
+	d.mode.Set("migration_done")
+}
+
+func (d *doctorApp) openSelectedHistoryDetail() {
+	actions := d.historyActions.Get()
+	if len(actions) == 0 {
+		return
+	}
+	idx := d.scrollOffset.Get()
+	if idx < 0 || idx >= len(actions) {
+		idx = 0
+	}
+	_ = d.showHistoryDetail(actions[idx])
 }
 
 func (d *doctorApp) stop() {

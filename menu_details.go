@@ -7,6 +7,7 @@ import (
 	"time"
 	"workstation-doctor/internal/app"
 	"workstation-doctor/internal/doctor"
+	"workstation-doctor/internal/store"
 )
 
 // DetailRow represents a single labeled attribute with provenance.
@@ -253,6 +254,79 @@ func actionDetail(preview app.Preview) Detail {
 			Rows: []DetailRow{
 				{Label: "Verification Check", Value: preview.VerificationCheckID},
 			},
+		})
+	}
+
+	return detail
+}
+
+func historyDetail(record store.ActionRecord) Detail {
+	execStr := "Unfinished"
+	verStr := "NotPerformed"
+	finTimeStr := "In progress"
+	obsVer := ""
+	safeErr := ""
+
+	if record.Finish != nil {
+		execStr = string(record.Finish.Execution)
+		verStr = string(record.Finish.Verification)
+		finTimeStr = formatTime(record.Finish.FinishedAt)
+		obsVer = record.Finish.ObservedVersion
+		safeErr = record.Finish.SafeError
+	}
+
+	detail := Detail{
+		Title: fmt.Sprintf("Action Record: %s (%s)", record.Label, record.ID),
+		Sections: []DetailSection{
+			{
+				Heading: "Execution & Outcome",
+				Rows: []DetailRow{
+					{Label: "Action ID", Value: record.ID},
+					{Label: "Integration", Value: record.IntegrationID},
+					{Label: "Check", Value: record.CheckID},
+					{Label: "Instance", Value: record.InstanceID},
+					{Label: "Kind", Value: record.Kind},
+					{Label: "Execution", Value: execStr},
+					{Label: "Verification", Value: verStr},
+					{Label: "Started At", Value: formatTime(record.StartedAt)},
+					{Label: "Finished At", Value: finTimeStr},
+					{Label: "Reason", Value: record.Reason},
+				},
+			},
+		},
+	}
+
+	if record.InstalledVersion != "" || record.TargetVersion != "" || obsVer != "" {
+		detail.Sections = append(detail.Sections, DetailSection{
+			Heading: "Version Information",
+			Rows: []DetailRow{
+				{Label: "Installed Version", Value: record.InstalledVersion},
+				{Label: "Target Version", Value: record.TargetVersion},
+				{Label: "Observed Version", Value: obsVer},
+			},
+		})
+	}
+
+	if safeErr != "" {
+		detail.Sections = append(detail.Sections, DetailSection{
+			Heading: "Safe Error",
+			Rows: []DetailRow{
+				{Label: "Error", Value: safeErr},
+			},
+		})
+	}
+
+	if len(record.Plan) > 0 {
+		var stepRows []DetailRow
+		for _, s := range record.Plan {
+			stepRows = append(stepRows, DetailRow{
+				Label: fmt.Sprintf("Step %d: %s", s.Index+1, s.Label),
+				Value: s.Description,
+			})
+		}
+		detail.Sections = append(detail.Sections, DetailSection{
+			Heading: "Plan Steps",
+			Rows:    stepRows,
 		})
 	}
 
