@@ -70,12 +70,32 @@ func gitInspectionSafe(ctx context.Context, root, common, dir string) bool {
 			}
 		}
 	}
-	for _, p := range []string{filepath.Join(root, ".gitmodules"), filepath.Join(dir, "config.worktree")} {
+	for _, p := range []string{filepath.Join(root, ".gitmodules"), filepath.Join(dir, "config.worktree"), filepath.Join(common, "objects", "info", "alternates")} {
 		if _, e := os.Stat(p); !errors.Is(e, os.ErrNotExist) {
 			return false
 		}
 	}
 	return true
+}
+
+func localGitStatus(ctx context.Context, h *Host, root string) ([]byte, bool) {
+	if h == nil || h.RunRead == nil || !filepath.IsAbs(root) {
+		return nil, false
+	}
+	dir, common, e := gitMetadataLocation(ctx, root)
+	if e != nil || !gitInspectionSafe(ctx, root, common, dir) {
+		return nil, false
+	}
+	exe, ok := findExecutable(h, "git")
+	if !ok {
+		return nil, false
+	}
+	args := []string{"--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-c", "core.hooksPath=/dev/null", "-c", "core.pager=cat", "status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored=matching", "--ignore-submodules=all"}
+	result, e := h.RunRead(ctx, Command{Executable: exe, Dir: root, Args: args, Env: map[string]string{"GIT_OPTIONAL_LOCKS": "0", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null", "GIT_CONFIG_COUNT": "0", "GIT_CONFIG_PARAMETERS": "", "GIT_DIR": dir, "GIT_COMMON_DIR": common, "GIT_WORK_TREE": root, "GIT_INDEX_FILE": filepath.Join(dir, "index"), "GIT_NO_REPLACE_OBJECTS": "1", "GIT_NO_LAZY_FETCH": "1", "GIT_TERMINAL_PROMPT": "0"}})
+	if e != nil || result.ExitCode != 0 || result.Truncated {
+		return nil, false
+	}
+	return result.Stdout, true
 }
 
 func inspectGitResource(ctx context.Context, h *Host, _ Instance, r ResourceSource, f Finding) Finding {

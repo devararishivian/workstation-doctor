@@ -23,11 +23,12 @@ type herdrPluginSource struct {
 }
 
 type herdrPluginItem struct {
-	PluginID string            `json:"plugin_id"`
-	Name     string            `json:"name"`
-	Version  string            `json:"version"`
-	Enabled  bool              `json:"enabled"`
-	Source   herdrPluginSource `json:"source"`
+	PluginID   string            `json:"plugin_id"`
+	Name       string            `json:"name"`
+	Version    string            `json:"version"`
+	Enabled    bool              `json:"enabled"`
+	PluginRoot string            `json:"plugin_root"`
+	Source     herdrPluginSource `json:"source"`
 }
 
 func herdrPluginsPath() (string, error) {
