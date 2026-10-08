@@ -24,6 +24,8 @@ func (d *doctorApp) Render(_ *tui.App) *tui.Element {
 		return d.renderConfirmFix()
 	case "fix_done":
 		return d.renderFixDone()
+	case "detail":
+		return d.renderDetail()
 	default:
 		return d.renderMenu()
 	}
@@ -388,6 +390,70 @@ func (d *doctorApp) renderHistory() *tui.Element {
 
 	nav := tui.New(
 		tui.WithText("[Esc / Enter / b: Back to Menu · q: Quit]"),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	)
+	root.AddChild(nav)
+
+	return root
+}
+
+func (d *doctorApp) renderDetail() *tui.Element {
+	root := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Column),
+		tui.WithBorder(tui.BorderRounded),
+		tui.WithBorderStyle(tui.NewStyle().Foreground(catppuccinBlue)),
+		tui.WithPadding(1),
+		tui.WithHeightPercent(100.0),
+		tui.WithWidthPercent(100.0),
+	)
+
+	title := tui.New(
+		tui.WithText("Inspection Details"),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinBlue).Bold()),
+	)
+	root.AddChild(title)
+
+	root.AddChild(tui.New(
+		tui.WithText(strings.Repeat("─", 80)),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	))
+
+	contentBox := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Column),
+		tui.WithFlexGrow(1.0),
+	)
+
+	text := d.activeDetail.Get()
+	lines := strings.Split(text, "\n")
+	offset := d.scrollOffset.Get()
+	if offset > len(lines)-1 && len(lines) > 0 {
+		offset = len(lines) - 1
+	}
+	visible := lines
+	if offset > 0 && offset < len(lines) {
+		visible = lines[offset:]
+	}
+	maxLines := 24
+	if len(visible) > maxLines {
+		visible = visible[:maxLines]
+	}
+
+	for _, line := range visible {
+		contentBox.AddChild(tui.New(
+			tui.WithText(line),
+		))
+	}
+	root.AddChild(contentBox)
+
+	root.AddChild(tui.New(
+		tui.WithText(strings.Repeat("─", 80)),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	))
+
+	nav := tui.New(
+		tui.WithText("[Esc / b: Back to Results · ↑/↓: Scroll · q: Quit]"),
 		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
 	)
 	root.AddChild(nav)

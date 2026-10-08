@@ -36,6 +36,7 @@ type doctorApp struct {
 
 	// Redesign service state
 	report            *tui.State[doctor.AuditReport]
+	activeDetail      *tui.State[string]
 	currentGeneration uint64
 	auditCancel       context.CancelFunc
 
@@ -67,6 +68,7 @@ func newDoctorApp(ctx context.Context, service *app.Service) *doctorApp {
 		lastSummary:  tui.NewState(""),
 		tickCount:    tui.NewState(0),
 		report:       tui.NewState(doctor.AuditReport{}),
+		activeDetail: tui.NewState(""),
 		results:      tui.NewState([]doctor.Result{}),
 		runID:        tui.NewState(int64(0)),
 		historyRuns:  tui.NewState([]store.Run{}),
@@ -91,6 +93,7 @@ func (d *doctorApp) BindApp(app *tui.App) {
 	d.lastSummary.BindApp(app)
 	d.tickCount.BindApp(app)
 	d.report.BindApp(app)
+	d.activeDetail.BindApp(app)
 	d.results.BindApp(app)
 	d.runID.BindApp(app)
 	d.historyRuns.BindApp(app)
@@ -142,6 +145,30 @@ func (d *doctorApp) startAudit() {
 			d.mode.Set("results")
 		})
 	}()
+}
+
+func (d *doctorApp) showFindingDetail(key doctor.FindingKey) {
+	rep := d.report.Get()
+	det, err := findingDetail(rep, key)
+	if err != nil {
+		d.statusMsg.Set(err.Error())
+		return
+	}
+	d.activeDetail.Set(detailText(det))
+	d.scrollOffset.Set(0)
+	d.mode.Set("detail")
+}
+
+func (d *doctorApp) openSelectedDetail() {
+	rep := d.report.Get()
+	if len(rep.Findings) == 0 {
+		return
+	}
+	idx := d.scrollOffset.Get()
+	if idx < 0 || idx >= len(rep.Findings) {
+		idx = 0
+	}
+	d.showFindingDetail(rep.Findings[idx].Key)
 }
 
 func (d *doctorApp) stop() {

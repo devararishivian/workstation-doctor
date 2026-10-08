@@ -127,6 +127,32 @@ func (d *doctorApp) KeyMap() tui.KeyMap {
 			tui.On(tui.KeyEnter, func(_ tui.KeyEvent) { d.mode.Set("menu") }),
 			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.mode.Set("menu") }),
 			tui.On(tui.Rune('m'), func(_ tui.KeyEvent) { d.mode.Set("menu") }),
+			tui.On(tui.Rune('d'), func(_ tui.KeyEvent) { d.openSelectedDetail() }),
+			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
+			tui.On(tui.KeyDown, func(_ tui.KeyEvent) { d.scrollOffset.Update(func(v int) int { return v + 1 }) }),
+			tui.On(tui.Rune('j'), func(_ tui.KeyEvent) { d.scrollOffset.Update(func(v int) int { return v + 1 }) }),
+			tui.On(tui.KeyUp, func(_ tui.KeyEvent) {
+				d.scrollOffset.Update(func(v int) int {
+					if v > 0 {
+						return v - 1
+					}
+					return 0
+				})
+			}),
+			tui.On(tui.Rune('k'), func(_ tui.KeyEvent) {
+				d.scrollOffset.Update(func(v int) int {
+					if v > 0 {
+						return v - 1
+					}
+					return 0
+				})
+			}),
+		}
+	case "detail":
+		return tui.KeyMap{
+			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.mode.Set("results") }),
+			tui.On(tui.KeyEnter, func(_ tui.KeyEvent) { d.mode.Set("results") }),
+			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.mode.Set("results") }),
 			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
 			tui.On(tui.KeyDown, func(_ tui.KeyEvent) { d.scrollOffset.Update(func(v int) int { return v + 1 }) }),
 			tui.On(tui.Rune('j'), func(_ tui.KeyEvent) { d.scrollOffset.Update(func(v int) int { return v + 1 }) }),
