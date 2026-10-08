@@ -16,6 +16,25 @@ import (
 
 const herdrPluginRegistryName = "plugins.json"
 
+type herdrPluginSource struct {
+	Kind           string `json:"kind"`
+	Owner          string `json:"owner"`
+	Repo           string `json:"repo"`
+	Subdir         string `json:"subdir,omitempty"`
+	RequestedRef   string `json:"requested_ref,omitempty"`
+	ResolvedCommit string `json:"resolved_commit"`
+	ManagedPath    string `json:"managed_path,omitempty"`
+}
+
+type herdrPluginItem struct {
+	PluginID   string            `json:"plugin_id"`
+	Name       string            `json:"name"`
+	Version    string            `json:"version"`
+	Enabled    bool              `json:"enabled"`
+	PluginRoot string            `json:"plugin_root"`
+	Source     herdrPluginSource `json:"source"`
+}
+
 type herdrRegistryEntry = herdrPluginItem
 
 func herdrPluginRegistryPath(h *Host, s Scope) (string, error) {

@@ -15,46 +15,6 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
-func checkSkills(ctx context.Context) Result {
-	home, err := userHome()
-	if err != nil {
-		return unknown("skills", "-", "-", "cannot determine home directory")
-	}
-	host := &Host{Home: home, Env: map[string]string{}}
-	discovery := discoverSkills(ctx, host, Scope{})
-	if discovery.Availability != AvailabilityPresent || len(discovery.Instances) == 0 {
-		return unknown("skills", "-", "-", "skill inventory is absent or incomplete")
-	}
-	invalid, unreadable := 0, false
-	for _, instance := range discovery.Instances {
-		findings := checkSkillMetadata(ctx, host, Scope{}, instance)
-		if len(findings) == 0 || findings[0].Outcome == OutcomeUnknown || findings[0].Outcome == OutcomeCanceled {
-			unreadable = true
-			continue
-		}
-		if findings[0].Outcome != OutcomeOK {
-			invalid++
-		}
-	}
-	if ctx.Err() != nil || unreadable || len(discovery.Diagnostics) > 0 {
-		return unknown("skills", fmt.Sprintf("%d skill", len(discovery.Instances)), "-", "skill inspection coverage is incomplete")
-	}
-	if invalid > 0 {
-		return unknown("skills", fmt.Sprintf("%d skill", len(discovery.Instances)), "-", fmt.Sprintf("%d skill metadata files are invalid", invalid))
-	}
-	return ok("skills", fmt.Sprintf("%d skill", len(discovery.Instances)), "100% valid", "Agent Skills frontmatter is valid")
-}
-
-type skillsChecker struct{}
-
-func (c *skillsChecker) Name() string { return "skills" }
-
-func (c *skillsChecker) Category() Category { return CategorySkill }
-
-func (c *skillsChecker) Check(ctx context.Context) Result {
-	return checkSkills(ctx)
-}
-
 // SkillMetadata is the allowlisted Agent Skills frontmatter used by inspection.
 type SkillMetadata struct {
 	Name        string `yaml:"name"`

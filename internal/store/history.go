@@ -1,3 +1,4 @@
+// Package store manages SQLite action history persistence.
 package store
 
 import (

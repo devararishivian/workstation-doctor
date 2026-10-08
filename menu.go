@@ -1,22 +1,16 @@
-// Package main provides the interactive menu.
+// Package main provides the interactive Go-TUI dashboard.
 package main
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"os"
 	"os/signal"
-	"strings"
 	"time"
 	"unicode/utf8"
 	"workstation-doctor/internal/app"
-	"workstation-doctor/internal/doctor"
-	"workstation-doctor/internal/store"
 
 	tui "github.com/grindlemire/go-tui"
-	"github.com/mattn/go-isatty"
-	"github.com/urfave/cli/v3"
 )
 
 var (
@@ -28,70 +22,6 @@ var (
 	catppuccinMauve  = tui.RGBColor(0xCB, 0xA6, 0xF7) // #CBA6F7
 	catppuccinDim    = tui.RGBColor(0x93, 0x99, 0xB2) // #9399B2
 )
-
-// isInteractive reports whether both input and output are terminals.
-func isInteractive() bool {
-	return isatty.IsTerminal(os.Stdin.Fd()) && isatty.IsTerminal(os.Stdout.Fd())
-}
-
-func runMenu(ctx context.Context, cmd *cli.Command) error {
-	if !isInteractive() {
-		return classicMenu(ctx, cmd)
-	}
-
-	engine, err := doctor.NewAuditEngine(doctor.BuiltinDefinitions(), doctor.DefaultLimits())
-	if err != nil {
-		return fmt.Errorf("initialize engine: %w", err)
-	}
-	host, err := doctor.NewHost(doctor.Scope{}, doctor.DefaultLimits())
-	if err != nil {
-		return fmt.Errorf("initialize host: %w", err)
-	}
-	path, _ := dbPath(cmd)
-	stateDir := os.TempDir()
-	if h, err := os.UserHomeDir(); err == nil {
-		stateDir = h + "/.local/state/workstation-doctor"
-	}
-	service := app.NewService(engine, host, doctor.Scope{}, app.Options{
-		Version:  version,
-		DBPath:   path,
-		StateDir: stateDir,
-		Policy:   store.DefaultPolicy(),
-	})
-
-	return runTUI(ctx, service)
-}
-
-func classicMenu(ctx context.Context, cmd *cli.Command) error {
-	out := newOutputLogger(cmd.Root().Writer)
-	in := bufio.NewScanner(os.Stdin)
-	for {
-		out.Info().Msg("\nworkstation-doctor")
-		out.Info().Msg("  1. Check status (read-only)")
-		out.Info().Msg("  2. Show ordered manual steps")
-		out.Info().Msg("  3. Run automatic fix")
-		out.Info().Msg("  4. Show history")
-		out.Info().Msg("  0. Quit")
-		out.Info().Msg("Select [0-4]: ")
-		if !in.Scan() {
-			return nil
-		}
-		switch strings.TrimSpace(in.Text()) {
-		case "1":
-			menuRun(doCheck(ctx, cmd))
-		case "2":
-			menuRun(doManual(ctx, cmd))
-		case "3":
-			menuRun(doFix(ctx, cmd, false))
-		case "4":
-			menuRun(doHistory(ctx, cmd))
-		case "0", "q", "quit", "exit":
-			return nil
-		default:
-			out.Info().Msg("Unknown selection.")
-		}
-	}
-}
 
 func (d *doctorApp) Watchers() []tui.Watcher {
 	return []tui.Watcher{
@@ -184,6 +114,13 @@ func (d *doctorApp) KeyMap() tui.KeyMap {
 			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.declinePreparedAction() }),
 			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.declinePreparedAction() }),
 		}
+	case "action_done":
+		return tui.KeyMap{
+			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.mode.Set("results") }),
+			tui.On(tui.KeyEnter, func(_ tui.KeyEvent) { d.mode.Set("results") }),
+			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.mode.Set("results") }),
+			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
+		}
 	case "history":
 		return tui.KeyMap{
 			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.mode.Set("menu") }),
@@ -253,14 +190,6 @@ func (d *doctorApp) KeyMap() tui.KeyMap {
 			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.mode.Set("menu") }),
 			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
 		}
-	case "confirm_fix":
-		return tui.KeyMap{
-			tui.On(tui.Rune('n'), func(_ tui.KeyEvent) { d.mode.Set("menu") }),
-			tui.On(tui.Rune('N'), func(_ tui.KeyEvent) { d.mode.Set("menu") }),
-			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.mode.Set("menu") }),
-			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.mode.Set("menu") }),
-			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
-		}
 	default:
 		return tui.KeyMap{
 			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
@@ -270,16 +199,13 @@ func (d *doctorApp) KeyMap() tui.KeyMap {
 }
 
 func (d *doctorApp) runAction(key string) {
-	if key == "fix" {
-		d.statusMsg.Set(legacyMaintenanceMessage)
-		d.mode.Set("menu")
-		return
-	}
 	switch key {
 	case "check":
 		d.startAudit()
 	case "manual":
 		d.mode.Set("manual")
+	case "fix":
+		d.openSelectedDetail()
 	case "history":
 		d.loadHistory()
 	case "quit":

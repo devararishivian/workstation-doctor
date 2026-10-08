@@ -21,11 +21,7 @@ func (d *doctorApp) Render(_ *tui.App) *tui.Element {
 		return d.renderManual()
 	case "history":
 		return d.renderHistory()
-	case "confirm_fix":
-		return d.renderConfirmFix()
-	case "fix_done":
-		return d.renderFixDone()
-	case "detail", "history_detail":
+	case "history_detail", "detail":
 		return d.renderDetail()
 	case "preview_action":
 		return d.renderPreviewAction()
@@ -767,82 +763,4 @@ func (d *doctorApp) renderActionDone() *tui.Element {
 	root.AddChild(nav)
 
 	return root
-}
-
-func (d *doctorApp) renderConfirmFix() *tui.Element {
-	wrapper := tui.New(
-		tui.WithDisplay(tui.DisplayFlex),
-		tui.WithDirection(tui.Column),
-		tui.WithJustify(tui.JustifyCenter),
-		tui.WithAlign(tui.AlignCenter),
-		tui.WithHeightPercent(100.0),
-		tui.WithWidthPercent(100.0),
-	)
-
-	card := tui.New(
-		tui.WithDisplay(tui.DisplayFlex),
-		tui.WithDirection(tui.Column),
-		tui.WithWidth(68),
-		tui.WithBorder(tui.BorderRounded),
-		tui.WithBorderStyle(tui.NewStyle().Foreground(catppuccinYellow)),
-		tui.WithPadding(1),
-		tui.WithGap(1),
-	)
-
-	title := tui.New(
-		tui.WithText("Automatic Maintenance Notice"),
-		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow).Bold()),
-	)
-	card.AddChild(title)
-
-	msg := tui.New(
-		tui.WithText(legacyMaintenanceMessage),
-		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow)),
-	)
-	card.AddChild(msg)
-
-	nav := tui.New(
-		tui.WithText("[Press Esc or 'b' to return]"),
-		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
-	)
-	card.AddChild(nav)
-
-	wrapper.AddChild(card)
-	return wrapper
-}
-
-func (d *doctorApp) renderFixDone() *tui.Element {
-	wrapper := tui.New(
-		tui.WithDisplay(tui.DisplayFlex),
-		tui.WithDirection(tui.Column),
-		tui.WithJustify(tui.JustifyCenter),
-		tui.WithAlign(tui.AlignCenter),
-		tui.WithHeightPercent(100.0),
-		tui.WithWidthPercent(100.0),
-	)
-
-	card := tui.New(
-		tui.WithDisplay(tui.DisplayFlex),
-		tui.WithDirection(tui.Column),
-		tui.WithWidth(68),
-		tui.WithBorder(tui.BorderRounded),
-		tui.WithBorderStyle(tui.NewStyle().Foreground(catppuccinGreen)),
-		tui.WithPadding(1),
-		tui.WithGap(1),
-	)
-
-	title := tui.New(
-		tui.WithText("Action Completed"),
-		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinGreen).Bold()),
-	)
-	card.AddChild(title)
-
-	nav := tui.New(
-		tui.WithText("[Esc / Enter / b: Back to Menu · q: Quit]"),
-		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
-	)
-	card.AddChild(nav)
-
-	wrapper.AddChild(card)
-	return wrapper
 }

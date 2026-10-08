@@ -45,12 +45,7 @@ type doctorApp struct {
 	currentGeneration uint64
 	auditCancel       context.CancelFunc
 
-	// Legacy compatibility state
-	results     *tui.State[[]doctor.Result]
-	runID       *tui.State[int64]
-	historyRuns *tui.State[[]store.Run]
-	fixLogs     *tui.State[[]string]
-	items       []menuItem
+	items []menuItem
 }
 
 var (
@@ -75,10 +70,6 @@ func newDoctorApp(ctx context.Context, service *app.Service) *doctorApp {
 		report:         tui.NewState(doctor.AuditReport{}),
 		activeDetail:   tui.NewState(""),
 		historyActions: tui.NewState([]store.ActionRecord{}),
-		results:        tui.NewState([]doctor.Result{}),
-		runID:          tui.NewState(int64(0)),
-		historyRuns:    tui.NewState([]store.Run{}),
-		fixLogs:        tui.NewState([]string{}),
 		items: []menuItem{
 			{key: "check", shortcut: "1", label: "Check status (read-only)"},
 			{key: "manual", shortcut: "2", label: "Show ordered manual steps"},
@@ -101,10 +92,6 @@ func (d *doctorApp) BindApp(app *tui.App) {
 	d.report.BindApp(app)
 	d.activeDetail.BindApp(app)
 	d.historyActions.BindApp(app)
-	d.results.BindApp(app)
-	d.runID.BindApp(app)
-	d.historyRuns.BindApp(app)
-	d.fixLogs.BindApp(app)
 }
 
 func (d *doctorApp) queueUpdate(fn func()) {

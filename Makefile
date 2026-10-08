@@ -4,16 +4,25 @@ LDFLAGS := -X main.version=$(VERSION)
 TEST_PKG ?= ./...
 TEST_RUN ?= .
 
-.PHONY: build test vet lint lint-fix fmt vuln run clean install help
+.PHONY: build test test-platform vet lint lint-fix fmt vuln run clean install help
 
 help: ## show targets
-	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*## "}; {printf "  %-10s %s\n", $$1, $$2}'
+	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*## "}; {printf "  %-14s %s\n", $$1, $$2}'
 
 build: ## build binary (version from git)
 	go build -ldflags "$(LDFLAGS)" -o $(BINARY) .
 
 test: ## run tests with data race detector
 	go test -race -run '$(TEST_RUN)' $(TEST_PKG)
+
+test-platform: ## run platform-specific tests (requires EXPECT_OS=darwin|linux)
+	@if [ -z "$(EXPECT_OS)" ]; then \
+		echo "EXPECT_OS is required (e.g. make test-platform EXPECT_OS=darwin)"; exit 1; \
+	fi
+	@if [ "$$(go env GOOS)" != "$(EXPECT_OS)" ]; then \
+		echo "Host OS $$(go env GOOS) does not match expected $(EXPECT_OS)"; exit 1; \
+	fi
+	go test -race ./...
 
 vet: ## run go vet
 	go vet ./...
