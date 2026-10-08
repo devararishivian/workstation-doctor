@@ -1,0 +1,4 @@
+# Synthetic uv 0.9.7 receipt subset. Tests substitute temporary absolute paths.
+[tool]
+requirements = [{ name = "serena-agent" }]
+entrypoints = [{ name = "serena", install-path = "/synthetic/bin/serena", from = "serena-agent" }]

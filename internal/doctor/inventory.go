@@ -154,7 +154,19 @@ func UvInventory(ctx context.Context, host *Host, scope Scope) (Inventory, error
 	if inventory, ok := cachedInventory(host.inventory, scope, "uv", path, root); ok {
 		return inventory, nil
 	}
-	return Inventory{Manager: "uv", Executable: path, Root: root, ObservedAt: hostNow(host), FreshnessNote: "Documented tool root observed; package inventory format is not established."}, nil
+	if !filepath.IsAbs(root) {
+		return Inventory{}, errors.New("uv tool directory is not absolute")
+	}
+	inventory, err := readUvReceipts(ctx, Inventory{Manager: "uv", Executable: path, Root: root, ObservedAt: hostNow(host), FreshnessNote: "Local uv receipt subset verified against 0.9.7 source; no cache, environment query or update lookup ran."})
+	if err != nil {
+		return inventory, err
+	}
+	if host.inventory != nil {
+		if err := cacheInventory(host.inventory, scope, inventory); err != nil {
+			return inventory, err
+		}
+	}
+	return inventory, nil
 }
 
 func uvDataDir(host *Host) string {

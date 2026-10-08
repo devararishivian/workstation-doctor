@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: serena-agent
+Version: 1.2.3
+
+Synthetic installed distribution metadata. No installation timestamp is implied.

@@ -6,6 +6,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/grindlemire/go-tui v0.22.1
 	github.com/mattn/go-isatty v0.0.24
+	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/rs/zerolog v1.35.1
 	github.com/urfave/cli/v3 v3.13.0
 	golang.org/x/mod v0.38.0
