@@ -94,7 +94,16 @@ func BrewInventory(ctx context.Context, host *Host, scope Scope) (Inventory, err
 	if inventory, ok := cachedInventory(host.inventory, scope, "brew", path, root); ok {
 		return inventory, nil
 	}
-	return Inventory{Manager: "brew", Executable: path, Root: root, ObservedAt: hostNow(host), FreshnessNote: "Local installed receipts only; manager update availability was not refreshed."}, nil
+	inventory, err := readBrewReceipts(ctx, Inventory{Manager: "brew", Executable: path, Root: root, ObservedAt: hostNow(host), FreshnessNote: "Local installed receipts only; manager update availability was not refreshed."})
+	if err != nil {
+		return inventory, err
+	}
+	if host.inventory != nil {
+		if err := cacheInventory(host.inventory, scope, inventory); err != nil {
+			return inventory, err
+		}
+	}
+	return inventory, nil
 }
 
 // NpmInventory observes npm's selected global prefix without querying a registry.
@@ -114,7 +123,19 @@ func NpmInventory(ctx context.Context, host *Host, scope Scope) (Inventory, erro
 	if inventory, ok := cachedInventory(host.inventory, scope, "npm", path, root); ok {
 		return inventory, nil
 	}
-	return Inventory{Manager: "npm", Executable: path, Root: root, ObservedAt: hostNow(host), FreshnessNote: "Local package metadata only; registry availability was not queried."}, nil
+	if !filepath.IsAbs(prefix) {
+		return Inventory{}, errors.New("npm prefix is not absolute")
+	}
+	inventory, err := readNpmPackages(ctx, Inventory{Manager: "npm", Executable: path, Root: root, ObservedAt: hostNow(host), FreshnessNote: "Selected global root candidate from prefix or executable location; local package metadata only. npm configuration was not evaluated; registry availability was not queried."})
+	if err != nil {
+		return inventory, err
+	}
+	if host.inventory != nil {
+		if err := cacheInventory(host.inventory, scope, inventory); err != nil {
+			return inventory, err
+		}
+	}
+	return inventory, nil
 }
 
 // UvInventory reports uv's documented tool root without launching transient tools.
