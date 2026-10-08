@@ -22,5 +22,9 @@ func BuiltinDefinitions() []Definition {
 	for n := range defs {
 		defs[n].Checks = append(defs[n].Checks, configs[defs[n].Integration.ID]...)
 	}
+	defs = append(defs,
+		Definition{Integration: Integration{ID: "pi-packages", Name: "Pi packages", Description: "User and selected project package declarations.", References: []string{"https://github.com/earendil-works/pi"}, SupportedScopes: []string{"user", "project"}}, Discover: discoverPiPackages, Checks: []CheckDefinition{{ID: "pi-packages", Name: "Pi package sources", Question: "Does the declared source have an established update?", Order: 17, Evaluate: checkPiPackageSources}}},
+		Definition{Integration: Integration{ID: "superpowers", Name: "Superpowers", Description: "Declared harness resources and explicit roots.", References: []string{"https://github.com/obra/superpowers"}, SupportedScopes: []string{"user", "project"}}, Discover: discoverSuperpowers, Checks: []CheckDefinition{{ID: "superpowers", Name: "Superpowers source intent", Question: "Does the requested source permit advancement?", Order: 18, Evaluate: checkSuperpowersSource}}},
+	)
 	return defs
 }

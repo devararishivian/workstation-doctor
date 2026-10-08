@@ -55,8 +55,8 @@ func TestToolRegistryTenChecks(t *testing.T) {
 	for _, check := range report.Checks {
 		ids = append(ids, check.ID)
 	}
-	want := []string{"pi", "herdr", "ghostty", "starship", "opencode", "tokenjuice", "serena", "gortex", "ghostty-config-valid", "ghostty-config-version", "herdr-config-valid", "herdr-config-version", "pi-config-valid", "pi-config-version", "brew-outdated", "npm-outdated-g"}
-	if !slices.Equal(ids, want) || len(report.Integrations) != 10 || len(report.Findings) != 16 {
+	want := []string{"pi", "herdr", "ghostty", "starship", "opencode", "tokenjuice", "serena", "gortex", "ghostty-config-valid", "ghostty-config-version", "herdr-config-valid", "herdr-config-version", "pi-config-valid", "pi-config-version", "brew-outdated", "npm-outdated-g", "pi-packages", "superpowers"}
+	if !slices.Equal(ids, want) || len(report.Integrations) != 12 || len(report.Findings) != 18 {
 		t.Fatalf("registry=%v integrations=%d findings=%d", ids, len(report.Integrations), len(report.Findings))
 	}
 	for _, f := range report.Findings {
