@@ -61,6 +61,10 @@ CREATE TABLE steps (
 CREATE INDEX idx_actions_started_id ON actions(started_at DESC, id DESC);
 CREATE INDEX idx_actions_integration_started ON actions(integration_id, started_at DESC, id DESC);
 CREATE INDEX idx_actions_instance_started ON actions(instance_id, started_at DESC, id DESC);
+CREATE INDEX idx_actions_batch_started ON actions(batch_id, started_at DESC, id DESC);
+CREATE INDEX idx_actions_execution_started ON actions(execution, started_at DESC, id DESC);
+CREATE INDEX idx_actions_verification_started ON actions(verification, started_at DESC, id DESC);
+CREATE INDEX idx_actions_finished_started ON actions(finished_at, started_at DESC, id DESC);
 `
 
 // HistoryStore owns a bounded SQLite pool for maintenance history only.
@@ -145,16 +149,16 @@ func InspectHistory(ctx context.Context, path string) (DBKind, error) {
 	if tables["check_runs"] || tables["check_results"] || tables["actions"] && userVersion == 0 {
 		return DBKindLegacy, nil
 	}
-	if applicationID != historyApplicationID || userVersion != historySchemaVersion || !tables["actions"] || !tables["steps"] || len(tables) != 2 {
+	if applicationID != historyApplicationID || userVersion < 1 || userVersion > historySchemaVersion || !tables["actions"] || !tables["steps"] || len(tables) != 2 {
 		return DBKindUnsupported, fmt.Errorf("store: unrecognized history schema")
 	}
-	if err := validateHistoryColumns(ctx, db); err != nil {
+	if err := validateHistoryColumns(ctx, db, userVersion); err != nil {
 		return DBKindUnsupported, err
 	}
 	return DBKindActionOnly, nil
 }
 
-func validateHistoryColumns(ctx context.Context, db *sql.DB) error {
+func validateHistoryColumns(ctx context.Context, db *sql.DB, version int) error {
 	for table, required := range map[string][]string{
 		"actions": {"id", "batch_id", "integration_id", "check_id", "instance_id", "label", "kind", "reason", "app_version", "installed_version", "target_version", "manager", "root", "scope", "owner_token", "started_at", "finished_at", "execution", "verification", "observed_version", "safe_error", "target_ids", "metadata_version", "metadata_json"},
 		"steps":   {"action_id", "step_index", "label", "description", "outcome", "exit_code", "safe_error", "safe_output", "output_truncated", "started_at", "finished_at"},
@@ -208,6 +212,35 @@ func validateHistoryColumns(ctx context.Context, db *sql.DB) error {
 	}
 	if !found {
 		return errors.New("store: unrecognized history schema: steps lack the action foreign key")
+	}
+	indexes := map[string]bool{}
+	indexRows, err := db.QueryContext(ctx, `SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='actions'`)
+	if err != nil {
+		return fmt.Errorf("store: inspect history indexes: %w", err)
+	}
+	for indexRows.Next() {
+		var name string
+		if err := indexRows.Scan(&name); err != nil {
+			_ = indexRows.Close()
+			return fmt.Errorf("store: inspect history indexes: %w", err)
+		}
+		indexes[name] = true
+	}
+	if err := indexRows.Err(); err != nil {
+		_ = indexRows.Close()
+		return fmt.Errorf("store: inspect history indexes: %w", err)
+	}
+	if err := indexRows.Close(); err != nil {
+		return fmt.Errorf("store: close history index inspection: %w", err)
+	}
+	requiredIndexes := []string{"idx_actions_started_id", "idx_actions_integration_started", "idx_actions_instance_started"}
+	if version >= 2 {
+		requiredIndexes = append(requiredIndexes, "idx_actions_batch_started", "idx_actions_execution_started", "idx_actions_verification_started", "idx_actions_finished_started")
+	}
+	for _, name := range requiredIndexes {
+		if !indexes[name] {
+			return fmt.Errorf("store: unrecognized history schema: missing index %s", name)
+		}
 	}
 	return nil
 }
@@ -277,6 +310,13 @@ func OpenHistory(ctx context.Context, path string, policy Policy) (*HistoryStore
 			if kind == DBKindLegacy {
 				return nil, closeHistoryOnError(db, &HistorySchemaError{Kind: kind}, abs, false)
 			}
+			return nil, closeHistoryOnError(db, &HistorySchemaError{Kind: DBKindUnsupported}, abs, false)
+		}
+		if err := migrateHistorySchema(ctx, db); err != nil {
+			return nil, closeHistoryOnError(db, fmt.Errorf("store: upgrade action history schema: %w", err), abs, false)
+		}
+		kind, err = InspectHistory(ctx, abs)
+		if err != nil || kind != DBKindActionOnly {
 			return nil, closeHistoryOnError(db, &HistorySchemaError{Kind: DBKindUnsupported}, abs, false)
 		}
 	}
@@ -359,6 +399,10 @@ func historyDSN(path string, readOnly bool) string {
 }
 
 func validateActionStart(start ActionStart, policy Policy) ([]byte, []byte, error) {
+	return validateActionContext(start, policy, true)
+}
+
+func validateActionContext(start ActionStart, policy Policy, requirePlan bool) ([]byte, []byte, error) {
 	fixed := []struct {
 		name, value string
 		max         int
@@ -388,8 +432,11 @@ func validateActionStart(start ActionStart, policy Policy) ([]byte, []byte, erro
 	if start.StartedAt.IsZero() {
 		return nil, nil, errors.New("start time is required")
 	}
-	if len(start.Plan) == 0 || len(start.Plan) > maxActionSteps {
-		return nil, nil, fmt.Errorf("plan must contain 1 to %d steps", maxActionSteps)
+	if len(start.Plan) > maxActionSteps {
+		return nil, nil, fmt.Errorf("plan may contain at most %d steps", maxActionSteps)
+	}
+	if requirePlan && len(start.Plan) == 0 {
+		return nil, nil, errors.New("plan must contain at least one step")
 	}
 	for i, step := range start.Plan {
 		if step.Index != i {
@@ -477,7 +524,7 @@ func validateStepResult(step StepResult) error {
 			return errors.New("started step requires valid ordered timestamps")
 		}
 	case StepOutcomeNotStarted:
-		if !step.StartedAt.IsZero() || !step.FinishedAt.IsZero() || step.ExitCode != nil || step.SafeOutput != "" {
+		if !step.StartedAt.IsZero() || !step.FinishedAt.IsZero() || step.ExitCode != nil || step.SafeOutput != "" || step.OutputTruncated {
 			return errors.New("not-started step cannot contain execution evidence")
 		}
 	default:
@@ -527,7 +574,7 @@ func validateSafeExcerpt(value, field string, limit int) error {
 	return nil
 }
 
-func tsHistory(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
+func tsHistory(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000000000Z") }
 
 // StartAction durably stores an action and all planned steps atomically.
 func (s *HistoryStore) StartAction(ctx context.Context, start ActionStart) error {

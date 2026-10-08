@@ -2,9 +2,9 @@ package store
 
 import "time"
 
-// History schema version 1 stores maintenance attempts and their steps only.
+// History schema version 2 adds stable timestamp ordering and filter indexes.
 const (
-	historySchemaVersion = 1
+	historySchemaVersion = 2
 	historyApplicationID = 0x57534452 // "WSDR"
 )
 
