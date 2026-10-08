@@ -64,6 +64,206 @@ type Service struct {
 	validApprovals map[string]string // token -> fingerprint
 }
 
+// ActionReport contains the durable execution outcome and verification result.
+type ActionReport struct {
+	RecordID     string
+	Execution    store.ExecutionOutcome
+	Verification store.VerificationOutcome
+	SafeError    string
+	HistoryError error
+}
+
+// Apply executes a confirmed action through its complete lifecycle:
+// ownership acquisition, durable start recording, precondition revalidation,
+// ordered step execution, postcondition verification, and final recording.
+func (s *Service) Apply(ctx context.Context, prepared PreparedAction, approval Approval) (ActionReport, error) {
+	if err := s.consumeApproval(prepared, approval); err != nil {
+		return ActionReport{}, fmt.Errorf("validate approval: %w", err)
+	}
+
+	ownership, err := s.options.Acquire(ctx, s.options.StateDir)
+	if err != nil {
+		return ActionReport{}, fmt.Errorf("acquire maintenance ownership: %w", err)
+	}
+	defer func() { _ = ownership.Release() }()
+
+	history, err := s.options.OpenHistory(ctx, s.options.DBPath, s.options.Policy)
+	if err != nil {
+		return ActionReport{}, fmt.Errorf("open history storage: %w", err)
+	}
+	defer func() { _ = history.Close() }()
+
+	plan := make([]store.PlannedStep, len(prepared.proposal.Steps))
+	for i, step := range prepared.proposal.Steps {
+		plan[i] = store.PlannedStep{
+			Index:       i,
+			Label:       step.Label,
+			Description: step.Label,
+		}
+	}
+
+	start := store.ActionStart{
+		ID:            prepared.actionID,
+		IntegrationID: prepared.key.IntegrationID,
+		CheckID:       prepared.key.CheckID,
+		InstanceID:    prepared.key.InstanceID,
+		Label:         prepared.proposal.Label,
+		Kind:          string(prepared.proposal.Mode),
+		Reason:        prepared.proposal.Reason,
+		AppVersion:    s.options.Version,
+		OwnerToken:    ownership.Token(),
+		StartedAt:     time.Now().UTC(),
+		TargetIDs:     slices.Clone(prepared.proposal.TargetIDs),
+		TargetVersion: prepared.proposal.TargetVersion.Value,
+		Scope:         prepared.scope.ProjectDir,
+		Plan:          plan,
+	}
+
+	if err := history.StartAction(ctx, start); err != nil {
+		return ActionReport{}, fmt.Errorf("start action record: %w", err)
+	}
+
+	// Recheck preconditions
+	finding, err := s.engine.Inspect(ctx, s.host, s.scope, prepared.key)
+	preconditionsValid := err == nil
+	if preconditionsValid {
+		var matched *doctor.ActionProposal
+		for _, p := range finding.Actions {
+			if p.ID == prepared.proposal.ID {
+				matched = &p
+				break
+			}
+		}
+		if matched == nil || len(matched.Preconditions) != len(prepared.proposal.Preconditions) {
+			preconditionsValid = false
+		} else {
+			for i, pre := range matched.Preconditions {
+				if pre.Value != prepared.proposal.Preconditions[i].Value {
+					preconditionsValid = false
+					break
+				}
+			}
+		}
+	}
+
+	if !preconditionsValid {
+		finish := store.ActionFinish{
+			FinishedAt:   time.Now().UTC(),
+			Execution:    store.ExecutionBlocked,
+			Verification: store.VerificationNotPerformed,
+			SafeError:    "preconditions changed or no longer valid",
+		}
+		_ = history.FinishAction(ctx, start.ID, finish)
+		return ActionReport{
+			RecordID:     start.ID,
+			Execution:    store.ExecutionBlocked,
+			Verification: store.VerificationNotPerformed,
+			SafeError:    finish.SafeError,
+		}, nil
+	}
+
+	// Execute ordered steps
+	executionOutcome := store.ExecutionCompleted
+	var safeError string
+	for i, step := range prepared.proposal.Steps {
+		stepResult, runErr := s.options.RunStep(ctx, step)
+		stepResult.Index = i
+
+		if err := history.SaveStep(ctx, start.ID, stepResult); err != nil {
+			executionOutcome = store.ExecutionFailed
+			safeError = fmt.Sprintf("save step checkpoint: %v", err)
+			break
+		}
+
+		if stepResult.Outcome != store.StepOutcomeCompleted || runErr != nil {
+			if errors.Is(runErr, context.Canceled) || errors.Is(runErr, context.DeadlineExceeded) ||
+				stepResult.Outcome == store.StepOutcomeCanceled || ctx.Err() != nil {
+				executionOutcome = store.ExecutionCanceled
+			} else {
+				executionOutcome = store.ExecutionFailed
+			}
+			safeError = stepResult.SafeError
+			if safeError == "" && runErr != nil {
+				safeError = runErr.Error()
+			}
+			break
+		}
+	}
+
+	// Verification postcondition
+	verificationOutcome := store.VerificationNotPerformed
+	if executionOutcome == store.ExecutionCompleted && prepared.proposal.VerificationCheckID != "" {
+		verifyKey := doctor.FindingKey{
+			IntegrationID: prepared.key.IntegrationID,
+			CheckID:       prepared.proposal.VerificationCheckID,
+			InstanceID:    prepared.key.InstanceID,
+		}
+		freshFinding, err := s.engine.Inspect(ctx, s.host, s.scope, verifyKey)
+		if err != nil {
+			verificationOutcome = store.VerificationUnknown
+		} else {
+			switch freshFinding.Outcome {
+			case doctor.OutcomeOK:
+				verificationOutcome = store.VerificationPassed
+			case doctor.OutcomeAttention:
+				verificationOutcome = store.VerificationFailed
+			default:
+				verificationOutcome = store.VerificationUnknown
+			}
+		}
+	}
+
+	// Finalize action recording using a bounded 5-second context
+	finCtx, finCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer finCancel()
+
+	finish := store.ActionFinish{
+		FinishedAt:   time.Now().UTC(),
+		Execution:    executionOutcome,
+		Verification: verificationOutcome,
+		SafeError:    safeError,
+	}
+	finishErr := history.FinishAction(finCtx, start.ID, finish)
+
+	return ActionReport{
+		RecordID:     start.ID,
+		Execution:    executionOutcome,
+		Verification: verificationOutcome,
+		SafeError:    safeError,
+		HistoryError: finishErr,
+	}, nil
+}
+
+// History queries maintenance history within limits.
+func (s *Service) History(ctx context.Context, query store.ActionQuery) (store.ActionPage, error) {
+	history, err := s.options.OpenHistory(ctx, s.options.DBPath, s.options.Policy)
+	if err != nil {
+		return store.ActionPage{}, fmt.Errorf("open history storage: %w", err)
+	}
+	defer func() { _ = history.Close() }()
+
+	page, err := history.ListActions(ctx, query)
+	if err != nil {
+		return store.ActionPage{}, fmt.Errorf("list actions: %w", err)
+	}
+	return page, nil
+}
+
+// HistoryDetail fetches a single action record by ID.
+func (s *Service) HistoryDetail(ctx context.Context, id string) (store.ActionRecord, error) {
+	history, err := s.options.OpenHistory(ctx, s.options.DBPath, s.options.Policy)
+	if err != nil {
+		return store.ActionRecord{}, fmt.Errorf("open history storage: %w", err)
+	}
+	defer func() { _ = history.Close() }()
+
+	record, err := history.Action(ctx, id)
+	if err != nil {
+		return store.ActionRecord{}, fmt.Errorf("get action record: %w", err)
+	}
+	return record, nil
+}
+
 // NewService constructs an application service without opening storage or acquiring locks.
 func NewService(engine *doctor.AuditEngine, host *doctor.Host, scope doctor.Scope, options Options) *Service {
 	if options.OpenHistory == nil {
@@ -74,6 +274,9 @@ func NewService(engine *doctor.AuditEngine, host *doctor.Host, scope doctor.Scop
 			}
 			return s, nil
 		}
+	}
+	if options.RunStep == nil {
+		options.RunStep = RunCommandStep
 	}
 	if options.Acquire == nil {
 		options.Acquire = AcquireOwnership
