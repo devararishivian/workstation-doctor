@@ -37,6 +37,8 @@ type doctorApp struct {
 	// Redesign service state
 	report            *tui.State[doctor.AuditReport]
 	activeDetail      *tui.State[string]
+	preparedAction    *app.PreparedAction
+	actionReport      *app.ActionReport
 	currentGeneration uint64
 	auditCancel       context.CancelFunc
 
@@ -169,6 +171,82 @@ func (d *doctorApp) openSelectedDetail() {
 		idx = 0
 	}
 	d.showFindingDetail(rep.Findings[idx].Key)
+}
+
+func (d *doctorApp) prepareAction(key doctor.FindingKey, actionID string) {
+	if d.service == nil {
+		d.statusMsg.Set("Service unavailable")
+		return
+	}
+	prep, err := d.service.Prepare(d.ctx, key, actionID)
+	if err != nil {
+		d.statusMsg.Set("Prepare failed: " + err.Error())
+		return
+	}
+	d.preparedAction = &prep
+	det := actionDetail(prep.Preview())
+	d.activeDetail.Set(detailText(det))
+	d.scrollOffset.Set(0)
+	d.mode.Set("preview_action")
+}
+
+func (d *doctorApp) declinePreparedAction() {
+	d.preparedAction = nil
+	if d.mode.Get() == "preview_action" {
+		d.mode.Set("results")
+	}
+}
+
+func (d *doctorApp) applyConfirmedAction() {
+	if d.preparedAction == nil || d.service == nil {
+		d.declinePreparedAction()
+		return
+	}
+	prep := *d.preparedAction
+	approval, err := d.service.Confirm(prep)
+	if err != nil {
+		d.statusMsg.Set("Confirm failed: " + err.Error())
+		d.declinePreparedAction()
+		return
+	}
+
+	d.mode.Set("fixing")
+	d.statusMsg.Set("Executing confirmed maintenance action...")
+
+	go func() {
+		rep, applyErr := d.service.Apply(d.ctx, prep, approval)
+		d.queueUpdate(func() {
+			d.preparedAction = nil
+			if applyErr != nil && rep.RecordID == "" {
+				d.statusMsg.Set("Action failed: " + applyErr.Error())
+				d.mode.Set("results")
+				return
+			}
+			d.actionReport = &rep
+			d.activeDetail.Set(actionReportText(rep))
+			d.scrollOffset.Set(0)
+			d.mode.Set("action_done")
+		})
+	}()
+}
+
+func (d *doctorApp) prepareFirstAction() {
+	rep := d.report.Get()
+	idx := d.scrollOffset.Get()
+	if idx < 0 || idx >= len(rep.Findings) {
+		idx = 0
+	}
+	if len(rep.Findings) == 0 {
+		return
+	}
+	f := rep.Findings[idx]
+	for _, a := range f.Actions {
+		if a.Mode == doctor.ActionAutomatic {
+			d.prepareAction(f.Key, a.ID)
+			return
+		}
+	}
+	d.statusMsg.Set("No automatic maintenance action available for this finding")
 }
 
 func (d *doctorApp) stop() {

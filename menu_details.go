@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"workstation-doctor/internal/app"
 	"workstation-doctor/internal/doctor"
 )
 
@@ -182,6 +183,96 @@ func instanceDetail(report doctor.AuditReport, id string) (Detail, error) {
 	}
 
 	return detail, nil
+}
+
+func actionDetail(preview app.Preview) Detail {
+	detail := Detail{
+		Title: fmt.Sprintf("Action Preview: %s", preview.Label),
+		Sections: []DetailSection{
+			{
+				Heading: "Action Overview",
+				Rows: []DetailRow{
+					{Label: "Action ID", Value: preview.ActionID},
+					{Label: "Integration", Value: preview.IntegrationID},
+					{Label: "Check", Value: preview.CheckID},
+					{Label: "Instance", Value: preview.InstanceID},
+					{Label: "Mode", Value: string(preview.Mode)},
+					{Label: "Reason", Value: preview.Reason},
+					{Label: "Target Version", Value: preview.TargetVersion.Value},
+					{Label: "Targets", Value: strings.Join(preview.TargetIDs, ", ")},
+				},
+			},
+		},
+	}
+
+	if len(preview.Steps) > 0 {
+		var stepRows []DetailRow
+		for i, s := range preview.Steps {
+			stepRows = append(stepRows, DetailRow{
+				Label: fmt.Sprintf("Step %d", i+1),
+				Value: s.Description,
+			})
+		}
+		detail.Sections = append(detail.Sections, DetailSection{
+			Heading: "Planned Steps",
+			Rows:    stepRows,
+		})
+	}
+
+	if len(preview.SideEffects) > 0 {
+		var effectRows []DetailRow
+		for _, eff := range preview.SideEffects {
+			effectRows = append(effectRows, DetailRow{
+				Label: "Side Effect",
+				Value: eff,
+			})
+		}
+		detail.Sections = append(detail.Sections, DetailSection{
+			Heading: "Expected Side Effects",
+			Rows:    effectRows,
+		})
+	}
+
+	if len(preview.Preconditions) > 0 {
+		var preRows []DetailRow
+		for _, pre := range preview.Preconditions {
+			preRows = append(preRows, DetailRow{
+				Label: pre.Label,
+				Value: pre.Value,
+			})
+		}
+		detail.Sections = append(detail.Sections, DetailSection{
+			Heading: "Preconditions",
+			Rows:    preRows,
+		})
+	}
+
+	if preview.VerificationCheckID != "" {
+		detail.Sections = append(detail.Sections, DetailSection{
+			Heading: "Verification",
+			Rows: []DetailRow{
+				{Label: "Verification Check", Value: preview.VerificationCheckID},
+			},
+		})
+	}
+
+	return detail
+}
+
+func actionReportText(rep app.ActionReport) string {
+	var sb strings.Builder
+	sb.WriteString("Maintenance Execution Report\n")
+	sb.WriteString("============================\n\n")
+	fmt.Fprintf(&sb, "Record ID:    %s\n", rep.RecordID)
+	fmt.Fprintf(&sb, "Execution:    %s\n", rep.Execution)
+	fmt.Fprintf(&sb, "Verification: %s\n", rep.Verification)
+	if rep.SafeError != "" {
+		fmt.Fprintf(&sb, "Error:        %s\n", rep.SafeError)
+	}
+	if rep.HistoryError != nil {
+		fmt.Fprintf(&sb, "History Note: %v\n", rep.HistoryError)
+	}
+	return sb.String()
 }
 
 func findingDetail(report doctor.AuditReport, key doctor.FindingKey) (Detail, error) {

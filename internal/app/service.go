@@ -102,6 +102,11 @@ func (s *Service) Apply(ctx context.Context, prepared PreparedAction, approval A
 		}
 	}
 
+	scopeStr := prepared.scope.ProjectDir
+	if scopeStr == "" {
+		scopeStr = "user"
+	}
+
 	start := store.ActionStart{
 		ID:            prepared.actionID,
 		IntegrationID: prepared.key.IntegrationID,
@@ -115,7 +120,7 @@ func (s *Service) Apply(ctx context.Context, prepared PreparedAction, approval A
 		StartedAt:     time.Now().UTC(),
 		TargetIDs:     slices.Clone(prepared.proposal.TargetIDs),
 		TargetVersion: prepared.proposal.TargetVersion.Value,
-		Scope:         prepared.scope.ProjectDir,
+		Scope:         scopeStr,
 		Plan:          plan,
 	}
 

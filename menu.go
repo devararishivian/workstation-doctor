@@ -153,6 +153,7 @@ func (d *doctorApp) KeyMap() tui.KeyMap {
 			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.mode.Set("results") }),
 			tui.On(tui.KeyEnter, func(_ tui.KeyEvent) { d.mode.Set("results") }),
 			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.mode.Set("results") }),
+			tui.On(tui.Rune('p'), func(_ tui.KeyEvent) { d.prepareFirstAction() }),
 			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
 			tui.On(tui.KeyDown, func(_ tui.KeyEvent) { d.scrollOffset.Update(func(v int) int { return v + 1 }) }),
 			tui.On(tui.Rune('j'), func(_ tui.KeyEvent) { d.scrollOffset.Update(func(v int) int { return v + 1 }) }),
@@ -172,6 +173,23 @@ func (d *doctorApp) KeyMap() tui.KeyMap {
 					return 0
 				})
 			}),
+		}
+	case "preview_action":
+		return tui.KeyMap{
+			tui.On(tui.Rune('y'), func(_ tui.KeyEvent) { d.applyConfirmedAction() }),
+			tui.On(tui.Rune('Y'), func(_ tui.KeyEvent) { d.applyConfirmedAction() }),
+			tui.On(tui.Rune('n'), func(_ tui.KeyEvent) { d.declinePreparedAction() }),
+			tui.On(tui.Rune('N'), func(_ tui.KeyEvent) { d.declinePreparedAction() }),
+			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.declinePreparedAction() }),
+			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.declinePreparedAction() }),
+			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.declinePreparedAction() }),
+		}
+	case "action_done":
+		return tui.KeyMap{
+			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.mode.Set("results") }),
+			tui.On(tui.KeyEnter, func(_ tui.KeyEvent) { d.mode.Set("results") }),
+			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.mode.Set("results") }),
+			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
 		}
 	case "confirm_fix":
 		return tui.KeyMap{

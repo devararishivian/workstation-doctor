@@ -26,6 +26,10 @@ func (d *doctorApp) Render(_ *tui.App) *tui.Element {
 		return d.renderFixDone()
 	case "detail":
 		return d.renderDetail()
+	case "preview_action":
+		return d.renderPreviewAction()
+	case "action_done":
+		return d.renderActionDone()
 	default:
 		return d.renderMenu()
 	}
@@ -454,6 +458,116 @@ func (d *doctorApp) renderDetail() *tui.Element {
 
 	nav := tui.New(
 		tui.WithText("[Esc / b: Back to Results · ↑/↓: Scroll · q: Quit]"),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	)
+	root.AddChild(nav)
+
+	return root
+}
+
+func (d *doctorApp) renderPreviewAction() *tui.Element {
+	root := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Column),
+		tui.WithBorder(tui.BorderRounded),
+		tui.WithBorderStyle(tui.NewStyle().Foreground(catppuccinYellow)),
+		tui.WithPadding(1),
+		tui.WithHeightPercent(100.0),
+		tui.WithWidthPercent(100.0),
+	)
+
+	title := tui.New(
+		tui.WithText("Confirmed Action Preview"),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow).Bold()),
+	)
+	root.AddChild(title)
+
+	root.AddChild(tui.New(
+		tui.WithText(strings.Repeat("─", 80)),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	))
+
+	contentBox := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Column),
+		tui.WithFlexGrow(1.0),
+	)
+
+	text := d.activeDetail.Get()
+	lines := strings.Split(text, "\n")
+	offset := d.scrollOffset.Get()
+	if offset > len(lines)-1 && len(lines) > 0 {
+		offset = len(lines) - 1
+	}
+	visible := lines
+	if offset > 0 && offset < len(lines) {
+		visible = lines[offset:]
+	}
+	maxLines := 22
+	if len(visible) > maxLines {
+		visible = visible[:maxLines]
+	}
+
+	for _, line := range visible {
+		contentBox.AddChild(tui.New(tui.WithText(line)))
+	}
+	root.AddChild(contentBox)
+
+	root.AddChild(tui.New(
+		tui.WithText(strings.Repeat("─", 80)),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	))
+
+	prompt := tui.New(
+		tui.WithText("Execute this action? [Press 'y' to confirm · Press 'n' / Esc / any other key to decline]"),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow).Bold()),
+	)
+	root.AddChild(prompt)
+
+	return root
+}
+
+func (d *doctorApp) renderActionDone() *tui.Element {
+	root := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Column),
+		tui.WithBorder(tui.BorderRounded),
+		tui.WithBorderStyle(tui.NewStyle().Foreground(catppuccinGreen)),
+		tui.WithPadding(1),
+		tui.WithHeightPercent(100.0),
+		tui.WithWidthPercent(100.0),
+	)
+
+	title := tui.New(
+		tui.WithText("Action Result & Verification"),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinGreen).Bold()),
+	)
+	root.AddChild(title)
+
+	root.AddChild(tui.New(
+		tui.WithText(strings.Repeat("─", 80)),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	))
+
+	contentBox := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Column),
+		tui.WithFlexGrow(1.0),
+	)
+
+	text := d.activeDetail.Get()
+	for line := range strings.SplitSeq(text, "\n") {
+		contentBox.AddChild(tui.New(tui.WithText(line)))
+	}
+	root.AddChild(contentBox)
+
+	root.AddChild(tui.New(
+		tui.WithText(strings.Repeat("─", 80)),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	))
+
+	nav := tui.New(
+		tui.WithText("[Esc / Enter / b: Back to Results · q: Quit]"),
 		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
 	)
 	root.AddChild(nav)

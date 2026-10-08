@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"workstation-doctor/internal/app"
 	"workstation-doctor/internal/doctor"
 )
 
@@ -111,25 +112,32 @@ func TestFindingUpdateDetail(t *testing.T) {
 	}
 }
 
-func TestGenericNewCheckDetail(t *testing.T) {
-	key := doctor.FindingKey{IntegrationID: "custom-tool", CheckID: "custom-check", InstanceID: "custom-inst"}
-	report := doctor.AuditReport{
-		Findings: []doctor.Finding{
-			{
-				Key:         key,
-				Outcome:     doctor.OutcomeOK,
-				Question:    "Does custom check pass?",
-				Explanation: "All criteria met.",
-			},
-		},
+func TestActionDetail(t *testing.T) {
+	prev := app.Preview{
+		ActionID:            "fix-1",
+		IntegrationID:       "pi",
+		CheckID:             "update",
+		InstanceID:          "inst-1",
+		Mode:                doctor.ActionAutomatic,
+		Label:               "Update Pi",
+		Reason:              "New version available",
+		TargetIDs:           []string{"target-1"},
+		TargetVersion:       doctor.Fact{Value: "2.0.0"},
+		Steps:               []app.PreviewStep{{Label: "Run upgrade", Description: "Run upgrade"}},
+		SideEffects:         []string{"Updates binary"},
+		Preconditions:       []doctor.Fact{{Label: "version", Value: "1.0.0"}},
+		VerificationCheckID: "verify-check",
 	}
-
-	detail, err := findingDetail(report, key)
-	if err != nil {
-		t.Fatalf("findingDetail: %v", err)
-	}
+	detail := actionDetail(prev)
 	text := detailText(detail)
-	if !strings.Contains(text, "Does custom check pass?") || !strings.Contains(text, "OK") {
-		t.Fatalf("custom check detail failed: %s", text)
+
+	if !strings.Contains(text, "Update Pi") || !strings.Contains(text, "New version available") {
+		t.Fatalf("missing action label or reason: %s", text)
+	}
+	if !strings.Contains(text, "Run upgrade") {
+		t.Fatalf("missing step description: %s", text)
+	}
+	if !strings.Contains(text, "Updates binary") {
+		t.Fatalf("missing side effect: %s", text)
 	}
 }
