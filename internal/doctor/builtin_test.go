@@ -19,7 +19,7 @@ func TestBuiltinToolFindings(t *testing.T) {
 			for _, d := range defs {
 				if d.Integration.ID == id {
 					found = true
-					if len(d.Checks) != 1 || d.Checks[0].ID != id || len(d.Integration.References) == 0 {
+					if len(d.Checks) == 0 || d.Checks[0].ID != id || len(d.Integration.References) == 0 {
 						t.Fatalf("definition=%+v", d)
 					}
 				}
@@ -55,8 +55,8 @@ func TestToolRegistryTenChecks(t *testing.T) {
 	for _, check := range report.Checks {
 		ids = append(ids, check.ID)
 	}
-	want := []string{"pi", "herdr", "ghostty", "starship", "opencode", "tokenjuice", "serena", "gortex", "brew-outdated", "npm-outdated-g"}
-	if !slices.Equal(ids, want) || len(report.Integrations) != 10 || len(report.Findings) != 10 {
+	want := []string{"pi", "herdr", "ghostty", "starship", "opencode", "tokenjuice", "serena", "gortex", "ghostty-config-valid", "ghostty-config-version", "herdr-config-valid", "herdr-config-version", "pi-config-valid", "pi-config-version", "brew-outdated", "npm-outdated-g"}
+	if !slices.Equal(ids, want) || len(report.Integrations) != 10 || len(report.Findings) != 16 {
 		t.Fatalf("registry=%v integrations=%d findings=%d", ids, len(report.Integrations), len(report.Findings))
 	}
 	for _, f := range report.Findings {

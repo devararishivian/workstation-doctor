@@ -2,7 +2,7 @@ package doctor
 
 // BuiltinDefinitions registers only providers implemented in the current stage.
 func BuiltinDefinitions() []Definition {
-	return []Definition{
+	defs := []Definition{
 		{Integration: Integration{ID: "pi", Name: "Pi", Description: "Coding agent installations in the selected environment.", References: []string{"https://github.com/earendil-works/pi"}, SupportedScopes: []string{"user"}}, Discover: discoverPi, Checks: []CheckDefinition{{ID: "pi", Name: "Pi version", Question: "Is a supported update available?", Order: 1, Evaluate: checkPiInstance}}},
 		{Integration: Integration{ID: "herdr", Name: "Herdr", Description: "Terminal runtime installations and update sources.", References: []string{"https://github.com/herdrdev/herdr"}, SupportedScopes: []string{"user"}}, Discover: discoverHerdr, Checks: []CheckDefinition{{ID: "herdr", Name: "Herdr version", Question: "Is a supported update available?", Order: 2, Evaluate: checkHerdrInstance}}},
 		{Integration: Integration{ID: "ghostty", Name: "Ghostty", Description: "Terminal application and command-line candidates.", References: []string{"https://ghostty.org/docs/install/binary"}, SupportedScopes: []string{"user"}}, Discover: discoverGhostty, Checks: []CheckDefinition{{ID: "ghostty", Name: "Ghostty version", Question: "Is a supported update available?", Order: 3, Evaluate: checkGhosttyInstance}}},
@@ -14,4 +14,13 @@ func BuiltinDefinitions() []Definition {
 		{Integration: Integration{ID: "brew", Name: "Homebrew", Description: "Selected prefix receipts with explicit freshness and coverage limits.", References: []string{"https://docs.brew.sh/Manpage"}, SupportedScopes: []string{"user"}}, Discover: discoverBrew, Checks: []CheckDefinition{{ID: "brew-outdated", Name: "Homebrew packages", Question: "Does the selected manager establish an update?", Order: 15, Evaluate: checkBrewInventory}}},
 		{Integration: Integration{ID: "npm", Name: "npm global packages", Description: "Selected global package root, separate from project dependencies.", References: []string{"https://docs.npmjs.com/cli/v11/configuring-npm/folders"}, SupportedScopes: []string{"user"}}, Discover: discoverNpm, Checks: []CheckDefinition{{ID: "npm-outdated-g", Name: "Global npm packages", Question: "Are selected global packages up to date?", Order: 16, Evaluate: checkNpmGlobal}}},
 	}
+	configs := map[string][]CheckDefinition{
+		"ghostty": {{ID: "ghostty-config-valid", Name: "Ghostty configuration syntax", Question: "Is configuration syntax supported?", Order: 9, Evaluate: checkGhosttyConfigValid}, {ID: "ghostty-config-version", Name: "Ghostty configuration compatibility", Question: "Is configuration compatible?", Order: 10, Evaluate: checkGhosttyConfigCompatibility}},
+		"herdr":   {{ID: "herdr-config-valid", Name: "Herdr configuration syntax", Question: "Is configuration syntax supported?", Order: 11, Evaluate: checkHerdrConfigValid}, {ID: "herdr-config-version", Name: "Herdr configuration compatibility", Question: "Is configuration compatible?", Order: 12, Evaluate: checkHerdrConfigCompatibility}},
+		"pi":      {{ID: "pi-config-valid", Name: "Pi configuration syntax", Question: "Is configuration syntax supported?", Order: 13, Evaluate: checkPiConfigValid}, {ID: "pi-config-version", Name: "Pi configuration compatibility", Question: "Is configuration compatible?", Order: 14, Evaluate: checkPiConfigCompatibility}},
+	}
+	for n := range defs {
+		defs[n].Checks = append(defs[n].Checks, configs[defs[n].Integration.ID]...)
+	}
+	return defs
 }
