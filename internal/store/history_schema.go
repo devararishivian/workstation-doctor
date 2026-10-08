@@ -49,12 +49,13 @@ func migrateHistorySchema(ctx context.Context, db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_actions_execution_started ON actions(execution, started_at DESC, id DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_actions_verification_started ON actions(verification, started_at DESC, id DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_actions_finished_started ON actions(finished_at, started_at DESC, id DESC)`,
+		`CREATE TABLE IF NOT EXISTS legacy_imports (source_fingerprint TEXT PRIMARY KEY NOT NULL, source_path TEXT NOT NULL, imported_at TEXT NOT NULL, imported_count INTEGER NOT NULL CHECK (imported_count >= 0))`,
 	} {
 		if _, err := tx.ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("create history filter index: %w", err)
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `PRAGMA user_version = 2`); err != nil {
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`PRAGMA user_version = %d`, historySchemaVersion)); err != nil {
 		return fmt.Errorf("set history schema version: %w", err)
 	}
 	if err := tx.Commit(); err != nil {

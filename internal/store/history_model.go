@@ -2,9 +2,9 @@ package store
 
 import "time"
 
-// History schema version 2 adds stable timestamp ordering and filter indexes.
+// History schema version 3 adds the atomic legacy-import marker.
 const (
-	historySchemaVersion = 2
+	historySchemaVersion = 3
 	historyApplicationID = 0x57534452 // "WSDR"
 )
 

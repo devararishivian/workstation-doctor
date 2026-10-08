@@ -26,6 +26,9 @@ func TestHistorySchemaUpgradeTimestampOrder(t *testing.T) {
 	if _, err := db.Exec(legacySQL); err != nil {
 		t.Fatalf("create old schema: %v", err)
 	}
+	if _, err := db.Exec(`DROP TABLE legacy_imports`); err != nil {
+		t.Fatalf("prepare v1 schema: %v", err)
+	}
 	if _, err := db.Exec(fmt.Sprintf(`PRAGMA application_id=%d; PRAGMA user_version=1`, historyApplicationID)); err != nil {
 		t.Fatal(err)
 	}

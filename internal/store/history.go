@@ -65,6 +65,12 @@ CREATE INDEX idx_actions_batch_started ON actions(batch_id, started_at DESC, id 
 CREATE INDEX idx_actions_execution_started ON actions(execution, started_at DESC, id DESC);
 CREATE INDEX idx_actions_verification_started ON actions(verification, started_at DESC, id DESC);
 CREATE INDEX idx_actions_finished_started ON actions(finished_at, started_at DESC, id DESC);
+CREATE TABLE legacy_imports (
+  source_fingerprint TEXT PRIMARY KEY NOT NULL,
+  source_path TEXT NOT NULL,
+  imported_at TEXT NOT NULL,
+  imported_count INTEGER NOT NULL CHECK (imported_count >= 0)
+);
 `
 
 // HistoryStore owns a bounded SQLite pool for maintenance history only.
@@ -149,7 +155,11 @@ func InspectHistory(ctx context.Context, path string) (DBKind, error) {
 	if tables["check_runs"] || tables["check_results"] || tables["actions"] && userVersion == 0 {
 		return DBKindLegacy, nil
 	}
-	if applicationID != historyApplicationID || userVersion < 1 || userVersion > historySchemaVersion || !tables["actions"] || !tables["steps"] || len(tables) != 2 {
+	expectedTables := 2
+	if userVersion >= 3 {
+		expectedTables = 3
+	}
+	if applicationID != historyApplicationID || userVersion < 1 || userVersion > historySchemaVersion || !tables["actions"] || !tables["steps"] || userVersion >= 3 && !tables["legacy_imports"] || len(tables) != expectedTables {
 		return DBKindUnsupported, fmt.Errorf("store: unrecognized history schema")
 	}
 	if err := validateHistoryColumns(ctx, db, userVersion); err != nil {
@@ -240,6 +250,35 @@ func validateHistoryColumns(ctx context.Context, db *sql.DB, version int) error 
 	for _, name := range requiredIndexes {
 		if !indexes[name] {
 			return fmt.Errorf("store: unrecognized history schema: missing index %s", name)
+		}
+	}
+	if version >= 3 {
+		rows, err := db.QueryContext(ctx, `PRAGMA table_info(legacy_imports)`)
+		if err != nil {
+			return fmt.Errorf("store: inspect legacy import marker: %w", err)
+		}
+		columns := map[string]bool{}
+		for rows.Next() {
+			var cid, notnull, pk int
+			var name, dataType string
+			var defaultValue any
+			if err := rows.Scan(&cid, &name, &dataType, &notnull, &defaultValue, &pk); err != nil {
+				_ = rows.Close()
+				return fmt.Errorf("store: inspect legacy import marker: %w", err)
+			}
+			columns[name] = true
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("store: inspect legacy import marker: %w", err)
+		}
+		if err := rows.Close(); err != nil {
+			return fmt.Errorf("store: close legacy import marker: %w", err)
+		}
+		for _, name := range []string{"source_fingerprint", "source_path", "imported_at", "imported_count"} {
+			if !columns[name] {
+				return fmt.Errorf("store: unrecognized history schema: missing legacy_imports.%s", name)
+			}
 		}
 	}
 	return nil
