@@ -32,7 +32,11 @@ type Host struct {
 
 // auditInventory owns discovery snapshots for one Audit or Inspect call only.
 // Manager-specific inventory belongs here when its consumers are introduced.
-type auditInventory struct{ discoveries []Discovery }
+type auditInventory struct {
+	discoveries []Discovery
+	mu          sync.Mutex
+	inventories map[inventoryKey]inventoryEntry
+}
 
 // NewHost captures the active environment without creating workstation state.
 func NewHost(_ Scope, limits Limits) (*Host, error) {

@@ -1,0 +1,10 @@
+Synthetic Unix uv storage layout based on https://docs.astral.sh/uv/reference/storage/ (checked 2026-10-09):
+
+persistent data: $XDG_DATA_HOME/uv, otherwise $HOME/.local/share/uv (with documented $CWD/.uv fallback)
+managed Python versions: <persistent-data>/python; override UV_PYTHON_INSTALL_DIR
+tools: <persistent-data>/tools; override UV_TOOL_DIR
+executable directory: $XDG_BIN_HOME, otherwise $XDG_DATA_HOME/../bin, otherwise $HOME/.local/bin
+Python binaries: executable directory; override UV_PYTHON_BIN_DIR
+tool binaries: executable directory; override UV_TOOL_BIN_DIR
+
+This layout is not a stable JSON inventory schema. Do not create directories, invoke uvx, install, or refresh caches during discovery.

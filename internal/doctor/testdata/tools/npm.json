@@ -1,0 +1,14 @@
+{
+  "name": "lib",
+  "dependencies": {
+    "fixture-tool": {
+      "version": "1.2.3",
+      "resolved": "https://registry.npmjs.org/fixture-tool/-/fixture-tool-1.2.3.tgz",
+      "overridden": false
+    },
+    "@fixture/scoped-tool": {
+      "version": "2.0.0",
+      "overridden": false
+    }
+  }
+}

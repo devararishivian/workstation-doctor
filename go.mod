@@ -8,6 +8,7 @@ require (
 	github.com/mattn/go-isatty v0.0.24
 	github.com/rs/zerolog v1.35.1
 	github.com/urfave/cli/v3 v3.13.0
+	golang.org/x/mod v0.38.0
 	modernc.org/sqlite v1.59.0
 )
 

@@ -1,0 +1,17 @@
+[
+  {
+    "name": "fixture-tool",
+    "full_name": "homebrew/core/fixture-tool",
+    "tap": "homebrew/core",
+    "oldnames": [],
+    "aliases": [],
+    "desc": "Synthetic fixture package",
+    "versions": { "stable": "1.2.3", "head": null, "bottle": true },
+    "revision": 0,
+    "installed": [
+      { "version": "1.2.3", "used_options": [], "built_as_bottle": true, "poured_from_bottle": true, "time": 1791321600, "runtime_dependencies": [], "arch": "arm64", "source": { "tap": "homebrew/core", "tap_git_head": "0000000000000000000000000000000000000000", "spec": "stable" } }
+    ],
+    "linked_keg": "1.2.3",
+    "pinned": false
+  }
+]

@@ -1,0 +1,9 @@
+# Synthetic manager fixtures
+
+These files contain synthetic examples based on official formats; they are not copied from a workstation.
+
+- `brew.json`: Homebrew formula inventory JSON shape per [`brew info --json=v1 --installed`](https://docs.brew.sh/Manpage#info) and receipt fields per [Homebrew `tab.rb`](https://github.com/Homebrew/brew/blob/cbc2b248b5c82a06b677d4d15479e8ae3826167f/Library/Homebrew/tab.rb). The receipt `time` is when that installed formula receipt was created for the current keg/revision, not necessarily the product's first installation. Receipt internals are private API, so consume only validated known fields and treat the shape as version-sensitive.
+- `npm.json`: npm v11 `npm ls --global --json --depth=0` tree fields (`name`, `version`, nested `dependencies`) and npm's documented Unix global package/bin locations under `{prefix}/lib/node_modules` and `{prefix}/bin`; see [npm ls](https://docs.npmjs.com/cli/v11/commands/npm-ls) and [npm folders](https://docs.npmjs.com/cli/v11/configuring-npm/folders). This fixture records inventory only, not registry availability. `npm outdated` consults registry and is not the installed inventory source.
+- `uv.txt`: documented Unix storage defaults and override names from [uv storage](https://docs.astral.sh/uv/reference/storage/). It is a synthetic layout note, not a claim that uv exposes a stable machine-readable installed-tool listing. Do not launch `uvx`, refresh caches, or infer ownership solely from an executable name.
+
+Discovery should prefer bounded direct reads of known receipt/package metadata and filesystem candidates. Where installed manager metadata cannot be safely established, report unknown rather than invoking a command whose behavior may touch caches or network.
