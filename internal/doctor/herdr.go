@@ -165,3 +165,11 @@ func (c *herdrIntegrationsChecker) Category() Category { return CategorySystem }
 func (c *herdrIntegrationsChecker) Check(ctx context.Context) Result {
 	return checkHerdrIntegrations(ctx)
 }
+
+func discoverHerdr(ctx context.Context, host *Host, scope Scope) Discovery {
+	return discoverNativeTool(ctx, host, scope, "herdr", nil)
+}
+
+func checkHerdrInstance(ctx context.Context, host *Host, _ Scope, instance Instance) []Finding {
+	return checkGithubTool(ctx, host, instance, "herdr", "herdrdev/herdr")
+}

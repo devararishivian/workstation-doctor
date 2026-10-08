@@ -61,3 +61,11 @@ func evaluateStarshipVersion(inst, latest string) Result {
 	}
 	return needUpdate("starship", inst, latest, "brew upgrade starship", "brew upgrade starship", "brew formula is outdated")
 }
+
+func discoverStarship(ctx context.Context, host *Host, scope Scope) Discovery {
+	return discoverNativeTool(ctx, host, scope, "starship", nil)
+}
+
+func checkStarshipInstance(ctx context.Context, host *Host, _ Scope, instance Instance) []Finding {
+	return checkGithubTool(ctx, host, instance, "starship", "starship/starship")
+}
