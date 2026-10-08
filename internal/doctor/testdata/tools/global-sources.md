@@ -11,5 +11,9 @@ Official sources:
 - https://docs.npmjs.com/cli/v11/configuring-npm/folders
 - https://docs.npmjs.com/cli/v11/commands/npm-outdated
 - https://formulae.brew.sh/docs/api/
+- https://formulae.brew.sh/formula/python@3.14
+- https://formulae.brew.sh/formula/gtk+3
+
+Formula basenames use a separate conservative allowlist from npm package names. The official formula pages establish that `@` version suffixes and `+` characters are valid. Synthetic tests retain those names without copying real receipts or relying on current published versions.
 
 The tests use temporary global roots, unrelated synthetic project dependencies, injected pins, synthetic release responses, and offline failures. No real manager, project configuration, or maintenance command runs.

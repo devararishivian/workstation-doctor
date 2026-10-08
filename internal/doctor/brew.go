@@ -57,7 +57,7 @@ func checkBrewInventory(ctx context.Context, host *Host, scope Scope, instance I
 		return []Finding{f}
 	}
 	name := strings.TrimPrefix(instance.Provenance.Package, "homebrew/core/")
-	if !validPackageName(name) || strings.Contains(name, "/") {
+	if !validFormulaName(name) {
 		return []Finding{f}
 	}
 	raw, err := selected.Fetch(ctx, "https://formulae.brew.sh/api/formula/"+url.PathEscape(name)+".json")

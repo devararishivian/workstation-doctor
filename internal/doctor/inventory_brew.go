@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 func readBrewReceipts(ctx context.Context, inventory Inventory) (Inventory, error) {
@@ -21,7 +20,7 @@ func readBrewReceipts(ctx context.Context, inventory Inventory) (Inventory, erro
 	}
 	count := 0
 	for _, pkg := range packages {
-		if !validPackageName(pkg.Name()) || strings.Contains(pkg.Name(), "/") {
+		if !validFormulaName(pkg.Name()) {
 			return inventory, errors.New("formula identity is unsupported")
 		}
 		versions, e := inventoryEntries(ctx, filepath.Join(cellar, pkg.Name()))
@@ -74,6 +73,21 @@ func readBrewReceipts(ctx context.Context, inventory Inventory) (Inventory, erro
 		}
 	}
 	return inventory, nil
+}
+
+// validFormulaName is a conservative basename allowlist, separate from npm names.
+// Homebrew formula names can include version suffixes and plus signs.
+func validFormulaName(name string) bool {
+	if len(name) == 0 || len(name) > DefaultLimits().MaxIdentifierBytes || name == "." || name == ".." {
+		return false
+	}
+	for n, r := range name {
+		alphanumeric := r >= 'a' && r <= 'z' || r >= '0' && r <= '9'
+		if !alphanumeric && (n == 0 || r != '-' && r != '_' && r != '.' && r != '+' && r != '@') {
+			return false
+		}
+	}
+	return true
 }
 
 // attachBrewEvidence accepts only an exact linked binary in a receipt-owned keg.
