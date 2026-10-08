@@ -6,7 +6,7 @@ workstation-doctor audits developer tools on a workstation. The tool audits Pi, 
 
 The CLI and TUI still use the legacy audit checks and audit-history database. Automatic maintenance is blocked during the migration. Both `fix` commands and TUI maintenance requests stop before audit, database access, or subprocess execution.
 
-The new `internal/doctor` registry implements ten tool and manager checks beside the legacy application. It uses bounded local metadata and HTTP reads. It does not execute manager inventory commands, native previews, transient launchers, or maintenance. It is not connected to the CLI or TUI yet.
+The new `internal/doctor` registry implements all 21 tool, manager, configuration, package, plugin, and skill checks beside the legacy application. It uses bounded local metadata and HTTP reads. Skill checks parse YAML frontmatter and scan only the user, selected-project, or explicit skill roots. The registry does not execute manager inventory commands, native previews, transient launchers, or maintenance. It is not connected to the CLI or TUI yet.
 
 Version detail depends on supported metadata. Homebrew formula receipts, linked global npm packages, uv receipt entrypoints, and Ghostty XML application metadata provide evidence. Other native layouts and Homebrew casks remain explicit limitations. Upstream releases are separate from manager update decisions. Installation times describe the current receipt revision, not first installation.
 
@@ -53,7 +53,7 @@ Configuration audits:
 - Pi configuration version comparing `lastChangelogVersion` against the installed Pi binary.
 
 Skill audits:
-- Skill description length under the 1024 character limit.
+- Required `SKILL.md` frontmatter fields, description length, and the skill-name-to-directory match.
 
 ## Network and secrets
 

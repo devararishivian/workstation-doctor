@@ -34,10 +34,12 @@ Current code map:
 - `internal/doctor/host.go` provides bounded read-only command, HTTP, and file inspection.
 - `internal/doctor/audit_engine.go` provides registered discovery, bounded scheduling, fresh inspection, and cancellation.
   The new engine is not wired into the TUI yet.
-- `internal/doctor/builtin.go` registers ten implemented tool and manager checks. Provider files supply discovery and
-  evidence beside the legacy checks. `discovery.go`, `inventory*.go`, `tool_instances.go`, `tool_native.go`, and
-  `manager_instances.go` supply bounded local evidence and release inspection. Native layouts without supported
-  metadata and Homebrew casks remain explicit limitations; no native preview or manager inventory command runs.
+- `internal/doctor/builtin.go` registers 21 implemented checks for tools, managers, configuration, packages, plugins,
+  and skills. Provider files supply discovery and evidence beside the legacy checks. `discovery.go`, `inventory*.go`,
+  `tool_instances.go`, `tool_native.go`, and `manager_instances.go` supply bounded local evidence and release
+  inspection. `skills.go` parses bounded YAML frontmatter and scans only declared or selected skill roots. Native
+  layouts without supported metadata and Homebrew casks remain explicit limitations; no native preview or manager
+  inventory command runs.
 - `internal/store/store.go` owns SQLite access for audit runs, per-check results, and actions.
 
 Current audit entry points also record runs. Both legacy shell-string maintenance paths are blocked by the migration
