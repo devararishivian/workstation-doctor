@@ -323,7 +323,7 @@ func (d *doctorApp) renderResults() *tui.Element {
 	)
 	root.AddChild(title)
 
-	if msg := d.statusMsg.Get(); msg != "" {
+	if msg := d.statusMsg.Get(); msg != "" && !strings.HasPrefix(msg, "Running") {
 		root.AddChild(tui.New(
 			tui.WithText("▶ "+msg),
 			tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow)),

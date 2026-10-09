@@ -139,7 +139,7 @@ func TestTargetAcceptanceMatrix(t *testing.T) {
 	})
 }
 
-func TestAll21CheckIDsRegistered(t *testing.T) {
+func TestAllCheckIDsRegistered(t *testing.T) {
 	defs := doctor.BuiltinDefinitions()
 	var registeredChecks []string
 	for _, def := range defs {
@@ -149,8 +149,8 @@ func TestAll21CheckIDsRegistered(t *testing.T) {
 	}
 	want := []string{
 		"pi", "herdr", "ghostty", "starship", "opencode", "tokenjuice", "serena", "gortex",
-		"ghostty-config-valid", "ghostty-config-version", "herdr-config-valid", "herdr-config-version",
-		"pi-config-valid", "pi-config-version", "brew-outdated", "npm-outdated-g", "pi-packages",
+		"ghostty-config-valid", "herdr-config-valid",
+		"pi-config-valid", "brew-outdated", "npm-outdated-g", "pi-packages",
 		"superpowers", "herdr-integr", "herdr-plugins", "skills",
 	}
 	if len(registeredChecks) != len(want) {

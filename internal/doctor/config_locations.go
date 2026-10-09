@@ -194,21 +194,9 @@ func configurationFinding(ctx context.Context, h *Host, i Instance, id string, p
 	return []Finding{f}
 }
 
-func configCompatibility(ctx context.Context, i Instance, id string) []Finding {
-	f := Finding{Key: FindingKey{IntegrationID: i.IntegrationID, CheckID: id, InstanceID: i.ID}, Outcome: OutcomeUnknown, Question: "Is configuration compatible with the installed version?", Explanation: "No supported static schema compatibility contract is established. Changelog presentation state and omitted optional sections are not schema versions.", Evidence: []Fact{i.Version}}
-	if ctx.Err() != nil {
-		f.Outcome = OutcomeCanceled
-	}
-	return []Finding{f}
-}
-
 func checkPiConfigValid(c context.Context, h *Host, s Scope, i Instance) []Finding {
 	p, e := ResolvePiConfiguration(h, s)
 	return configurationFinding(c, h, i, "pi-config-valid", p, e, "json")
-}
-
-func checkPiConfigCompatibility(c context.Context, _ *Host, _ Scope, i Instance) []Finding {
-	return configCompatibility(c, i, "pi-config-version")
 }
 
 func checkHerdrConfigValid(c context.Context, h *Host, s Scope, i Instance) []Finding {
@@ -216,15 +204,7 @@ func checkHerdrConfigValid(c context.Context, h *Host, s Scope, i Instance) []Fi
 	return configurationFinding(c, h, i, "herdr-config-valid", p, e, "toml")
 }
 
-func checkHerdrConfigCompatibility(c context.Context, _ *Host, _ Scope, i Instance) []Finding {
-	return configCompatibility(c, i, "herdr-config-version")
-}
-
 func checkGhosttyConfigValid(c context.Context, h *Host, s Scope, i Instance) []Finding {
 	p, e := ResolveGhosttyConfiguration(h, s, i.Version.Value)
 	return configurationFinding(c, h, i, "ghostty-config-valid", p, e, "ghostty")
-}
-
-func checkGhosttyConfigCompatibility(c context.Context, _ *Host, _ Scope, i Instance) []Finding {
-	return configCompatibility(c, i, "ghostty-config-version")
 }

@@ -72,10 +72,6 @@ func TestConfigurationOptionalDefaults(t *testing.T) {
 		})
 	}
 	resourceFile(t, filepath.Join(h.Home, ".config", "herdr", "config.toml"), "[ui]\n")
-	f := checkHerdrConfigCompatibility(t.Context(), h, Scope{}, configInstance("herdr"))[0]
-	if f.Outcome != OutcomeUnknown {
-		t.Fatal(f)
-	}
 	path := filepath.Join(h.Home, ".pi", "agent", "settings.json")
 	if e := os.MkdirAll(path, 0o700); e != nil {
 		t.Fatal(e)
@@ -83,17 +79,6 @@ func TestConfigurationOptionalDefaults(t *testing.T) {
 	if f := checkPiConfigValid(t.Context(), h, Scope{}, configInstance("pi"))[0]; f.Outcome != OutcomeUnknown {
 		t.Fatal(f)
 	}
-}
-
-func TestPiChangelogNotSchema(t *testing.T) {
-	t.Parallel()
-	h := testHost(t)
-	resourceFile(t, filepath.Join(h.Home, ".pi", "agent", "settings.json"), `{"lastChangelogVersion":"0.1.0"}`)
-	f := checkPiConfigCompatibility(t.Context(), h, Scope{}, configInstance("pi"))[0]
-	if f.Outcome != OutcomeUnknown {
-		t.Fatal(f)
-	}
-	assertNoAutomatic(t, f)
 }
 
 func TestMCPAggregateOnly(t *testing.T) {

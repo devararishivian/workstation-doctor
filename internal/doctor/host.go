@@ -33,9 +33,10 @@ type Host struct {
 // auditInventory owns discovery snapshots for one Audit or Inspect call only.
 // Manager-specific inventory belongs here when its consumers are introduced.
 type auditInventory struct {
-	discoveries []Discovery
-	mu          sync.Mutex
-	inventories map[inventoryKey]inventoryEntry
+	discoveries  []Discovery
+	mu           sync.Mutex
+	inventories  map[inventoryKey]inventoryEntry
+	brewOutdated any
 }
 
 // NewHost captures the active environment without creating workstation state.

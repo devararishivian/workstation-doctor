@@ -11,6 +11,7 @@ func TestBrewFormulaNames(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			host, _ := syntheticBrewTool(t, "tool", name, "homebrew/core")
+			host.RunRead = nil
 			inventory, err := BrewInventory(t.Context(), host, Scope{})
 			if err != nil || len(inventory.Items) != 1 || inventory.Items[0].Package != "homebrew/core/"+name {
 				t.Fatalf("inventory=%+v error=%v", inventory, err)

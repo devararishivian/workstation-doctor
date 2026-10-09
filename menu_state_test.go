@@ -666,7 +666,7 @@ func TestHistoryAndCurrentSeparated(t *testing.T) {
 	}
 }
 
-func TestDashboardAppearance21ComponentRows(t *testing.T) {
+func TestDashboardAppearanceComponentRows(t *testing.T) {
 	defs := doctor.BuiltinDefinitions()
 	engine, err := doctor.NewAuditEngine(defs, doctor.DefaultLimits())
 	if err != nil {
@@ -679,8 +679,8 @@ func TestDashboardAppearance21ComponentRows(t *testing.T) {
 	report := engine.Audit(t.Context(), host, doctor.Scope{})
 
 	rows := buildDashboardRows(report)
-	if len(rows) != 21 {
-		t.Fatalf("expected 21 dashboard rows, got %d", len(rows))
+	if len(rows) != 18 {
+		t.Fatalf("expected 18 dashboard rows, got %d", len(rows))
 	}
 
 	for _, r := range rows {

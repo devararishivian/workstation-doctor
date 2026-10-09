@@ -139,6 +139,7 @@ func (d *doctorApp) startAudit() {
 
 			d.report.Set(rep)
 			d.scrollOffset.Set(0)
+			d.statusMsg.Set("")
 			d.mode.Set("results")
 		})
 	}()
