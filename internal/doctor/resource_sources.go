@@ -269,8 +269,39 @@ func evaluateResource(ctx context.Context, h *Host, i Instance, check string) []
 		if e == nil {
 			if order < 0 {
 				f.Outcome = OutcomeAttention
+				f.Explanation = fmt.Sprintf("A newer upstream release (%s) is available for package %s (installed: %s).", remote.Version, r.Identity, metadata.Version)
+				f.References = append(f.References, PublicReference{Kind: "package", Label: "npm package", URL: "https://www.npmjs.com/package/" + r.Identity})
+				f.Evidence = append(f.Evidence, Fact{State: EvidenceKnown, Label: "Package identity", Value: r.Identity, Source: "declared resource", ObservedAt: hostNow(h)})
+				if piExe, ok := findExecutable(h, "pi"); ok {
+					f.Actions = []ActionProposal{
+						{
+							ID:                  "update-pi-pkg-" + sanitizeActionID(r.Identity),
+							Key:                 f.Key,
+							Mode:                ActionAutomatic,
+							Label:               fmt.Sprintf("Update %s to %s", r.Identity, remote.Version),
+							Reason:              fmt.Sprintf("Package %s is outdated (%s -> %s)", r.Identity, metadata.Version, remote.Version),
+							TargetIDs:           []string{i.ID},
+							TargetVersion:       Fact{State: EvidenceKnown, Label: "Target version", Value: remote.Version},
+							Preconditions:       []Fact{i.Root, {State: EvidenceKnown, Label: "Installed package version", Value: metadata.Version}},
+							VerificationCheckID: "pi-packages",
+							Steps: []CommandStep{
+								{
+									Label: fmt.Sprintf("Run pi install npm:%s", r.Identity),
+									Command: Command{
+										Executable: piExe,
+										Args:       []string{"install", "npm:" + r.Identity},
+									},
+								},
+							},
+							SideEffects: []string{
+								"Installs the updated extension package into Pi settings and node_modules.",
+							},
+						},
+					}
+				}
 			} else {
 				f.Outcome = OutcomeOK
+				f.Explanation = fmt.Sprintf("Installed package %s (%s) matches or exceeds upstream release (%s).", r.Identity, metadata.Version, remote.Version)
 			}
 			f.Evidence = append(f.Evidence, Fact{State: EvidenceKnown, Label: "Upstream package release", Value: remote.Version, Source: "public npm registry", Note: "Not a proven manager update decision.", ObservedAt: hostNow(h)})
 		}
@@ -279,4 +310,23 @@ func evaluateResource(ctx context.Context, h *Host, i Instance, check string) []
 		f.Outcome = OutcomeCanceled
 	}
 	return []Finding{f}
+}
+
+func sanitizeActionID(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			b.WriteRune(r)
+		} else if r == '@' || r == '/' || r == '.' {
+			b.WriteRune('-')
+		}
+	}
+	res := strings.Trim(b.String(), "-")
+	if len(res) > 48 {
+		res = res[:48]
+	}
+	if res == "" {
+		return "item"
+	}
+	return res
 }

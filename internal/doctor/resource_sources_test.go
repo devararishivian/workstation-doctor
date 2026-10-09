@@ -61,6 +61,31 @@ func TestPiPackageSourceKinds(t *testing.T) {
 	}
 }
 
+func TestPiPackageAutomaticUpdateProposal(t *testing.T) {
+	t.Parallel()
+	h := testHost(t)
+	makeExecutable(t, filepath.Join(h.Home, "pi"))
+	resourceFile(t, filepath.Join(h.Home, ".pi", "agent", "settings.json"), `{"packages":["npm:@foo/bar"]}`)
+	resourceFile(t, filepath.Join(h.Home, ".pi", "agent", "npm", "node_modules", "@foo", "bar", "package.json"), `{"name":"@foo/bar","version":"1.0.0"}`)
+	h.Fetch = func(context.Context, string) ([]byte, error) {
+		return []byte(`{"version":"1.1.0"}`), nil
+	}
+	d := discoverPiPackages(t.Context(), h, Scope{})
+	if len(d.Instances) != 1 {
+		t.Fatalf("instances: %+v", d)
+	}
+	f := checkPiPackageSources(t.Context(), h, Scope{}, d.Instances[0])[0]
+	if f.Outcome != OutcomeAttention {
+		t.Fatalf("expected OutcomeAttention, got %+v", f)
+	}
+	if len(f.Actions) != 1 || f.Actions[0].Mode != ActionAutomatic {
+		t.Fatalf("expected 1 automatic action, got %+v", f.Actions)
+	}
+	if err := ValidateProposal(f.Actions[0], DefaultLimits()); err != nil {
+		t.Fatalf("invalid proposal: %v", err)
+	}
+}
+
 func TestDeclaredResourceExplicitOverrides(t *testing.T) {
 	t.Parallel()
 	h := testHost(t)

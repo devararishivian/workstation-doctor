@@ -39,6 +39,7 @@ type doctorApp struct {
 	// Redesign service state
 	report            *tui.State[doctor.AuditReport]
 	activeDetail      *tui.State[string]
+	currentDetail     *tui.State[Detail]
 	preparedAction    *app.PreparedAction
 	actionReport      *app.ActionReport
 	historyActions    *tui.State[[]store.ActionRecord]
@@ -72,6 +73,7 @@ func newDoctorApp(ctx context.Context, service *app.Service) *doctorApp {
 		tickCount:      tui.NewState(0),
 		report:         tui.NewState(doctor.AuditReport{}),
 		activeDetail:   tui.NewState(""),
+		currentDetail:  tui.NewState(Detail{}),
 		historyActions: tui.NewState([]store.ActionRecord{}),
 		items: []menuItem{
 			{key: "check", shortcut: "1", label: "Check status (read-only)"},
@@ -95,6 +97,7 @@ func (d *doctorApp) BindApp(app *tui.App) {
 	d.tickCount.BindApp(app)
 	d.report.BindApp(app)
 	d.activeDetail.BindApp(app)
+	d.currentDetail.BindApp(app)
 	d.historyActions.BindApp(app)
 }
 
@@ -158,6 +161,7 @@ func (d *doctorApp) openSelectedComponentDetail() {
 	}
 	row := rows[sel]
 	det := componentDetail(rep, row.Component)
+	d.currentDetail.Set(det)
 	d.activeDetail.Set(detailText(det))
 	d.scrollOffset.Set(0)
 	d.mode.Set("detail")
@@ -175,6 +179,7 @@ func (d *doctorApp) prepareAction(key doctor.FindingKey, actionID string) {
 	}
 	d.preparedAction = &prep
 	det := actionDetail(prep.Preview())
+	d.currentDetail.Set(det)
 	d.activeDetail.Set(detailText(det))
 	d.scrollOffset.Set(0)
 	d.mode.Set("preview_action")
@@ -256,6 +261,7 @@ func (d *doctorApp) loadHistory() {
 
 func (d *doctorApp) showHistoryDetail(record store.ActionRecord) error {
 	detail := historyDetail(record)
+	d.currentDetail.Set(detail)
 	d.activeDetail.Set(detailText(detail))
 	d.scrollOffset.Set(0)
 	d.mode.Set("history_detail")

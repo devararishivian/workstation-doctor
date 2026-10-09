@@ -58,6 +58,8 @@ func (d *doctorApp) KeyMap() tui.KeyMap {
 			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.mode.Set("menu") }),
 			tui.On(tui.KeyEnter, func(_ tui.KeyEvent) { d.openSelectedComponentDetail() }),
 			tui.On(tui.Rune('d'), func(_ tui.KeyEvent) { d.openSelectedComponentDetail() }),
+			tui.On(tui.Rune('2'), func(_ tui.KeyEvent) { d.runAction("manual") }),
+			tui.On(tui.Rune('3'), func(_ tui.KeyEvent) { d.runAction("fix") }),
 			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
 			tui.On(tui.KeyDown, func(_ tui.KeyEvent) {
 				d.selectedResult.Update(func(v int) int {
@@ -100,6 +102,7 @@ func (d *doctorApp) KeyMap() tui.KeyMap {
 			tui.On(tui.KeyEnter, func(_ tui.KeyEvent) { d.mode.Set("menu") }),
 			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.mode.Set("menu") }),
 			tui.On(tui.Rune('m'), func(_ tui.KeyEvent) { d.mode.Set("menu") }),
+			tui.On(tui.Rune('3'), func(_ tui.KeyEvent) { d.runAction("fix") }),
 			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
 			tui.On(tui.KeyDown, func(_ tui.KeyEvent) { d.scrollOffset.Update(func(v int) int { return v + 1 }) }),
 			tui.On(tui.Rune('j'), func(_ tui.KeyEvent) { d.scrollOffset.Update(func(v int) int { return v + 1 }) }),

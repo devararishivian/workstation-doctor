@@ -246,14 +246,11 @@ func componentDetail(report doctor.AuditReport, checkID string) Detail {
 	var attentionRows []DetailRow
 	for _, f := range findings {
 		if f.Outcome == doctor.OutcomeAttention {
-			instID := f.Key.InstanceID
-			if instID == "" {
-				instID = f.Key.IntegrationID
-			}
+			name := findingInstanceName(report, f)
 			attentionRows = append(attentionRows, DetailRow{
-				Label:  instID,
+				Label:  name,
 				Value:  f.Explanation,
-				Source: string(f.Outcome),
+				Source: "Update Available",
 			})
 		}
 	}
@@ -280,7 +277,66 @@ func componentDetail(report doctor.AuditReport, checkID string) Detail {
 		})
 	}
 
+	var okRows []DetailRow
+	for _, f := range findings {
+		if f.Outcome == doctor.OutcomeOK {
+			name := findingInstanceName(report, f)
+			val := "OK"
+			for _, ev := range f.Evidence {
+				if ev.Label == "Installed package version" || ev.Label == "Installed Git revision" || ev.Label == "Current Git branch" {
+					val = ev.Value
+					break
+				}
+			}
+			okRows = append(okRows, DetailRow{
+				Label:  name,
+				Value:  val,
+				Source: "Current",
+			})
+		}
+	}
+	if len(okRows) > 0 {
+		detail.Sections = append(detail.Sections, DetailSection{
+			Heading: "Current Items (OK)",
+			Rows:    okRows,
+		})
+	}
+
 	return detail
+}
+
+func findingInstanceName(report doctor.AuditReport, f doctor.Finding) string {
+	for _, ev := range f.Evidence {
+		if ev.Label == "Package identity" || ev.Label == "Package name" || ev.Label == "Identity" || ev.Label == "Plugin name" || ev.Label == "Skill name" {
+			if ev.Value != "" {
+				return ev.Value
+			}
+		}
+	}
+	for _, d := range report.Discoveries {
+		for _, inst := range d.Instances {
+			if inst.ID == f.Key.InstanceID {
+				for _, cfg := range inst.Configuration {
+					if cfg.Label == "Source identity" || cfg.Label == "Plugin identity" || cfg.Label == "Skill name" {
+						if cfg.Value != "" {
+							return cfg.Value
+						}
+					}
+				}
+				if inst.Provenance.Package != "" {
+					return inst.Provenance.Package
+				}
+			}
+		}
+	}
+	if f.Key.InstanceID != "" {
+		parts := strings.Split(f.Key.InstanceID, ":")
+		if len(parts) == 2 && len(parts[1]) >= 12 {
+			return parts[0] + " item (" + parts[1][:8] + ")"
+		}
+		return f.Key.InstanceID
+	}
+	return f.Key.IntegrationID
 }
 
 func actionDetail(preview app.Preview) Detail {
