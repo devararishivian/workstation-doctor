@@ -3,9 +3,32 @@ package doctor
 import (
 	"context"
 	"errors"
+	"os"
 	"slices"
 	"testing"
 )
+
+func TestProbeActions(t *testing.T) {
+	if os.Getenv("PROBE_LIVE") != "1" {
+		t.Skip("skip live probe")
+	}
+	defs := BuiltinDefinitions()
+	engine, err := NewAuditEngine(defs, DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, err := NewHost(Scope{}, DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep := engine.Audit(t.Context(), host, Scope{})
+	t.Logf("Total findings: %d", len(rep.Findings))
+	for _, f := range rep.Findings {
+		for _, a := range f.Actions {
+			t.Logf("Action: mode=%s, id=%s, check=%s, label=%s, reason=%s", a.Mode, a.ID, f.Key.CheckID, a.Label, a.Reason)
+		}
+	}
+}
 
 func TestBuiltinToolFindings(t *testing.T) {
 	t.Parallel()

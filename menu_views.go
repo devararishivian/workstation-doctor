@@ -31,6 +31,8 @@ func (d *doctorApp) Render(_ *tui.App) *tui.Element {
 		return d.renderPreviewMigration()
 	case "migration_done":
 		return d.renderMigrationDone()
+	case "no_fixes":
+		return d.renderNoFixes()
 	default:
 		return d.renderMenu()
 	}
@@ -320,6 +322,13 @@ func (d *doctorApp) renderResults() *tui.Element {
 		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinBlue).Bold()),
 	)
 	root.AddChild(title)
+
+	if msg := d.statusMsg.Get(); msg != "" {
+		root.AddChild(tui.New(
+			tui.WithText("▶ "+msg),
+			tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow)),
+		))
+	}
 
 	// Column Headers Row
 	colHeader := tui.New(
@@ -981,4 +990,60 @@ func (d *doctorApp) renderActionDone() *tui.Element {
 	root.AddChild(nav)
 
 	return root
+}
+
+func (d *doctorApp) renderNoFixes() *tui.Element {
+	wrapper := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Column),
+		tui.WithJustify(tui.JustifyCenter),
+		tui.WithAlign(tui.AlignCenter),
+		tui.WithHeightPercent(100.0),
+		tui.WithWidthPercent(100.0),
+	)
+
+	card := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Column),
+		tui.WithWidth(68),
+		tui.WithBorder(tui.BorderRounded),
+		tui.WithBorderStyle(tui.NewStyle().Foreground(catppuccinGreen)),
+		tui.WithPadding(1),
+		tui.WithGap(1),
+	)
+
+	title := tui.New(
+		tui.WithText("Automatic Maintenance Notice"),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinGreen).Bold()),
+	)
+	card.AddChild(title)
+
+	card.AddChild(tui.New(
+		tui.WithText(strings.Repeat("─", 64)),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	))
+
+	msg := tui.New(
+		tui.WithText("No automatic fixes are pending. All components are current, or require manual maintenance steps."),
+	)
+	card.AddChild(msg)
+
+	card.AddChild(tui.New(
+		tui.WithText("Select 'Show ordered manual steps' [2] from the menu to review components requiring manual actions."),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	))
+
+	card.AddChild(tui.New(
+		tui.WithText(strings.Repeat("─", 64)),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	))
+
+	nav := tui.New(
+		tui.WithText("[Esc / Enter / b: Return to Menu · 2: Show Manual Steps · q: Quit]"),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	)
+	card.AddChild(nav)
+
+	wrapper.AddChild(card)
+	return wrapper
 }

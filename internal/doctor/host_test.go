@@ -86,15 +86,15 @@ func TestInspectionHTTPBound(t *testing.T) {
 	defer server.Close()
 	limits := DefaultLimits()
 	limits.MaxHTTPBytes = 64
-	if _, err := fetchMetadata(t.Context(), server.Client(), server.URL, limits); err == nil {
+	if _, err := fetchMetadata(t.Context(), server.Client(), server.URL, limits, nil); err == nil {
 		t.Fatal("oversized HTTP response accepted")
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if _, err := fetchMetadata(ctx, server.Client(), server.URL, limits); !errors.Is(err, context.Canceled) {
+	if _, err := fetchMetadata(ctx, server.Client(), server.URL, limits, nil); !errors.Is(err, context.Canceled) {
 		t.Fatalf("HTTP cancellation: %v", err)
 	}
-	if _, err := fetchMetadata(t.Context(), server.Client(), "http://example.invalid", limits); err == nil {
+	if _, err := fetchMetadata(t.Context(), server.Client(), "http://example.invalid", limits, nil); err == nil {
 		t.Fatal("insecure metadata URL accepted")
 	}
 }

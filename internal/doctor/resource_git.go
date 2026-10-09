@@ -141,7 +141,33 @@ func inspectGitResource(ctx context.Context, h *Host, _ Instance, r ResourceSour
 		f.Explanation = "The checkout contains tracked or untracked changes. No update is proposed."
 		return f
 	}
-	if r.RequestedRef == "" || r.RequestedRef != name {
+	targetRef := r.RequestedRef
+	if targetRef == "" {
+		if up, upErr := run("rev-parse", "--abbrev-ref", "@{upstream}"); upErr == nil && up.ExitCode == 0 && !up.Truncated {
+			u := strings.TrimSpace(string(up.Stdout))
+			if _, after, ok := strings.Cut(u, "/"); ok {
+				targetRef = after
+			}
+		}
+		if targetRef == "" {
+			if sym, symErr := run("symbolic-ref", "--short", "refs/remotes/origin/HEAD"); symErr == nil && sym.ExitCode == 0 && !sym.Truncated {
+				u := strings.TrimSpace(string(sym.Stdout))
+				if _, after, ok := strings.Cut(u, "/"); ok {
+					targetRef = after
+				}
+			}
+		}
+		if targetRef == "" {
+			if refCheck, rcErr := run("rev-parse", "--verify", "refs/remotes/origin/"+name); rcErr == nil && refCheck.ExitCode == 0 && !refCheck.Truncated {
+				targetRef = name
+			}
+		}
+		if targetRef == "" && name != "" {
+			targetRef = name
+		}
+	}
+
+	if targetRef == "" || (r.RequestedRef != "" && r.RequestedRef != name) {
 		f.Explanation = "Requested tracking branch is not established; no default remote branch is guessed."
 		return f
 	}
@@ -149,12 +175,14 @@ func inspectGitResource(ctx context.Context, h *Host, _ Instance, r ResourceSour
 	if len(parts) != 3 || parts[0] != "github.com" || h.Fetch == nil {
 		return f
 	}
-	remote, e := h.Fetch(ctx, "https://api.github.com/repos/"+parts[1]+"/"+parts[2]+"/commits/"+url.PathEscape(r.RequestedRef))
+	remote, e := h.Fetch(ctx, "https://api.github.com/repos/"+parts[1]+"/"+parts[2]+"/commits/"+url.PathEscape(targetRef))
 	if e != nil || len(remote) > int(DefaultLimits().MaxHTTPBytes) {
+		f.Explanation = "Remote lookup is unavailable. Local revision evidence is retained."
 		return f
 	}
 	var metadata struct{ SHA string }
 	if json.Unmarshal(remote, &metadata) != nil || !gitObjectID(metadata.SHA) {
+		f.Explanation = "Remote repository returned unsupported metadata."
 		return f
 	}
 	f.Evidence = append(f.Evidence, Fact{State: EvidenceKnown, Label: "Requested remote revision", Value: metadata.SHA, Source: "public GitHub commit metadata", ObservedAt: hostNow(h)})

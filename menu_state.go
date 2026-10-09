@@ -318,7 +318,7 @@ func (d *doctorApp) triggerAutomaticFix() {
 		}
 	}
 	d.statusMsg.Set("No actions needed. All components are current.")
-	d.mode.Set("results")
+	d.mode.Set("no_fixes")
 }
 
 func (d *doctorApp) stop() {

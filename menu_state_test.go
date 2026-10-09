@@ -732,3 +732,83 @@ func TestManualViewContainsComponentAndActionDetails(t *testing.T) {
 		t.Fatal("renderManual returned nil element")
 	}
 }
+
+func TestMenuAutomaticFixNoActionsShowsNotice(t *testing.T) {
+	d := newDoctorApp(t.Context(), nil)
+	d.report.Set(doctor.AuditReport{
+		Findings: []doctor.Finding{
+			{
+				Key:     doctor.FindingKey{IntegrationID: "pi", CheckID: "pi"},
+				Outcome: doctor.OutcomeOK,
+			},
+		},
+	})
+	d.triggerAutomaticFix()
+	if d.mode.Get() != "no_fixes" {
+		t.Fatalf("expected mode no_fixes, got %q", d.mode.Get())
+	}
+	elem := d.renderNoFixes()
+	if elem == nil {
+		t.Fatal("renderNoFixes returned nil element")
+	}
+}
+
+func TestMenuAutomaticFixWithActionPreparesPreview(t *testing.T) {
+	key := doctor.FindingKey{IntegrationID: "fixture", CheckID: "update", InstanceID: "inst"}
+	proposal := doctor.ActionProposal{
+		ID:                  "fix-1",
+		Key:                 key,
+		Mode:                doctor.ActionAutomatic,
+		Label:               "Upgrade fixture",
+		Reason:              "Outdated component",
+		TargetIDs:           []string{"target-1"},
+		TargetVersion:       doctor.Fact{State: doctor.EvidenceKnown, Value: "2.0.0"},
+		Steps:               []doctor.CommandStep{{Label: "Run upgrade", Command: doctor.Command{Executable: "/usr/bin/true", Dir: "/tmp"}}},
+		Preconditions:       []doctor.Fact{{State: doctor.EvidenceKnown, Label: "installed", Value: "1.0.0"}},
+		VerificationCheckID: "verify-check",
+	}
+	engine, err := doctor.NewAuditEngine([]doctor.Definition{{
+		Integration: doctor.Integration{ID: "fixture", Name: "Fixture", Description: "Desc"},
+		Discover: func(context.Context, *doctor.Host, doctor.Scope) doctor.Discovery {
+			return doctor.Discovery{Availability: doctor.AvailabilityPresent, Instances: []doctor.Instance{{
+				ID: "inst", IntegrationID: "fixture", Availability: doctor.AvailabilityPresent,
+				Version: doctor.Fact{State: doctor.EvidenceKnown, Value: "1.0.0"},
+			}}}
+		},
+		Checks: []doctor.CheckDefinition{
+			{ID: "update", Name: "Update", Question: "Update?", Order: 1, Evaluate: func(context.Context, *doctor.Host, doctor.Scope, doctor.Instance) []doctor.Finding {
+				return []doctor.Finding{{Key: key, Outcome: doctor.OutcomeAttention, Actions: []doctor.ActionProposal{proposal}}}
+			}},
+		},
+	}}, doctor.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, err := doctor.NewHost(doctor.Scope{}, doctor.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := app.NewService(engine, host, doctor.Scope{}, app.Options{
+		StateDir: t.TempDir(),
+		DBPath:   filepath.Join(t.TempDir(), "h", "history.db"),
+		Policy:   store.DefaultPolicy(),
+	})
+
+	d := newDoctorApp(t.Context(), service)
+	d.report.Set(doctor.AuditReport{
+		Findings: []doctor.Finding{
+			{
+				Key:     key,
+				Outcome: doctor.OutcomeAttention,
+				Actions: []doctor.ActionProposal{proposal},
+			},
+		},
+	})
+	d.triggerAutomaticFix()
+	if d.mode.Get() != "preview_action" {
+		t.Fatalf("expected mode preview_action, got %q", d.mode.Get())
+	}
+	if d.preparedAction == nil {
+		t.Fatal("expected non-nil preparedAction")
+	}
+}

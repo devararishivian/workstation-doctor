@@ -53,6 +53,17 @@ func NewHost(_ Scope, limits Limits) (*Host, error) {
 			env[key] = value
 		}
 	}
+	if env["GITHUB_TOKEN"] == "" && env["GH_TOKEN"] == "" {
+		if ghPath, err := exec.LookPath("gh"); err == nil {
+			cmd := exec.Command(ghPath, "auth", "token")
+			if out, err := cmd.Output(); err == nil {
+				tok := strings.TrimSpace(string(out))
+				if tok != "" {
+					env["GH_TOKEN"] = tok
+				}
+			}
+		}
+	}
 	host := &Host{OS: runtime.GOOS, Home: home, Path: env["PATH"], Env: env, Now: time.Now, inventory: &auditInventory{}}
 	processEnv := maps.Clone(env)
 	host.RunRead = func(ctx context.Context, command Command) (CommandResult, error) {
@@ -65,7 +76,7 @@ func NewHost(_ Scope, limits Limits) (*Host, error) {
 		return nil
 	}}
 	host.Fetch = func(ctx context.Context, address string) ([]byte, error) {
-		return fetchMetadata(ctx, client, address, limits)
+		return fetchMetadata(ctx, client, address, limits, env)
 	}
 	return host, nil
 }
@@ -114,7 +125,7 @@ func ReadBounded(ctx context.Context, path string, limit int64) (raw []byte, err
 	}
 }
 
-func fetchMetadata(ctx context.Context, client *http.Client, address string, limits Limits) ([]byte, error) {
+func fetchMetadata(ctx context.Context, client *http.Client, address string, limits Limits, env map[string]string) ([]byte, error) {
 	parsed, err := url.Parse(address)
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
 		return nil, errors.New("metadata URL requires HTTPS without credentials")
@@ -124,6 +135,14 @@ func fetchMetadata(ctx context.Context, client *http.Client, address string, lim
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create metadata request: %w", err)
+	}
+	request.Header.Set("User-Agent", "workstation-doctor")
+	if parsed.Host == "api.github.com" && env != nil {
+		if tok := env["GITHUB_TOKEN"]; tok != "" {
+			request.Header.Set("Authorization", "Bearer "+tok)
+		} else if tok := env["GH_TOKEN"]; tok != "" {
+			request.Header.Set("Authorization", "Bearer "+tok)
+		}
 	}
 	response, err := client.Do(request)
 	if err != nil {

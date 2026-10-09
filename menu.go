@@ -231,6 +231,15 @@ func (d *doctorApp) KeyMap() tui.KeyMap {
 			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.mode.Set("menu") }),
 			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
 		}
+	case "no_fixes":
+		return tui.KeyMap{
+			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.mode.Set("menu") }),
+			tui.On(tui.KeyEnter, func(_ tui.KeyEvent) { d.mode.Set("menu") }),
+			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.mode.Set("menu") }),
+			tui.On(tui.Rune('m'), func(_ tui.KeyEvent) { d.mode.Set("menu") }),
+			tui.On(tui.Rune('2'), func(_ tui.KeyEvent) { d.runAction("manual") }),
+			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
+		}
 	default:
 		return tui.KeyMap{
 			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
