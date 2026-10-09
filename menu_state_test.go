@@ -667,6 +667,61 @@ func TestHistoryAndCurrentSeparated(t *testing.T) {
 	}
 }
 
+func TestDashboardWithCompletelyEmptyHost(t *testing.T) {
+	defs := doctor.BuiltinDefinitions()
+	engine, err := doctor.NewAuditEngine(defs, doctor.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	emptyHost := &doctor.Host{OS: "linux", Home: t.TempDir(), Path: t.TempDir(), Env: map[string]string{}}
+	report := engine.Audit(t.Context(), emptyHost, doctor.Scope{})
+
+	rows := buildDashboardRows(report)
+	if len(rows) != 18 {
+		t.Fatalf("expected 18 rows, got %d", len(rows))
+	}
+	for _, r := range rows {
+		if r.Status != "N/A" {
+			t.Fatalf("expected status N/A for absent component %s, got %s", r.Component, r.Status)
+		}
+	}
+
+	d := newDoctorApp(t.Context(), nil)
+	d.report.Set(report)
+
+	// 1. Results view does not panic
+	elemResults := d.renderResults()
+	if elemResults == nil {
+		t.Fatal("renderResults returned nil")
+	}
+
+	// 2. Open detail on each absent row does not panic
+	for i := range rows {
+		d.selectedResult.Set(i)
+		d.openSelectedComponentDetail()
+		elemDetail := d.renderDetail()
+		if elemDetail == nil {
+			t.Fatalf("renderDetail returned nil for absent row %d (%s)", i, rows[i].Component)
+		}
+	}
+
+	// 3. Manual view does not panic
+	elemManual := d.renderManual()
+	if elemManual == nil {
+		t.Fatal("renderManual returned nil")
+	}
+
+	// 4. Automatic fix does not panic and shows notice
+	d.triggerAutomaticFix()
+	if d.mode.Get() != "no_fixes" {
+		t.Fatalf("expected no_fixes mode, got %s", d.mode.Get())
+	}
+	elemNoFixes := d.renderNoFixes()
+	if elemNoFixes == nil {
+		t.Fatal("renderNoFixes returned nil")
+	}
+}
+
 func TestDashboardAppearanceComponentRows(t *testing.T) {
 	defs := doctor.BuiltinDefinitions()
 	engine, err := doctor.NewAuditEngine(defs, doctor.DefaultLimits())

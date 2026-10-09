@@ -230,8 +230,8 @@ func buildDashboardRows(report doctor.AuditReport) []dashboardRow {
 				Component: cid,
 				Installed: "-",
 				Latest:    "-",
-				Status:    "UNKNOWN",
-				Note:      "No applicable instance was established within the selected scope.",
+				Status:    "N/A",
+				Note:      "Tool is not installed or configured in scope.",
 				Key:       doctor.FindingKey{CheckID: cid},
 			})
 			continue
@@ -267,6 +267,8 @@ func buildDashboardRows(report doctor.AuditReport) []dashboardRow {
 				st = "OK"
 			case doctor.OutcomeAttention:
 				st = "UPDATE"
+			case doctor.OutcomeNotApplicable:
+				st = "N/A"
 			}
 			rows = append(rows, dashboardRow{
 				Component: cid,
@@ -277,22 +279,29 @@ func buildDashboardRows(report doctor.AuditReport) []dashboardRow {
 				Key:       f.Key,
 			})
 		} else {
-			nOK, nAttn, nUnk := 0, 0, 0
+			nOK, nAttn, nUnk, nNA := 0, 0, 0, 0
 			for _, f := range findings {
 				switch f.Outcome {
 				case doctor.OutcomeOK:
 					nOK++
 				case doctor.OutcomeAttention:
 					nAttn++
+				case doctor.OutcomeNotApplicable:
+					nNA++
 				default:
 					nUnk++
 				}
 			}
-			st := "OK"
-			if nAttn > 0 {
+			var st string
+			switch {
+			case nAttn > 0:
 				st = "UPDATE"
-			} else if nUnk > 0 && nOK == 0 {
+			case nUnk > 0 && nOK == 0:
 				st = "UNKNOWN"
+			case nOK == 0 && nAttn == 0 && nNA > 0:
+				st = "N/A"
+			default:
+				st = "OK"
 			}
 			var unit string
 			switch {
@@ -403,6 +412,7 @@ func (d *doctorApp) renderResults() *tui.Element {
 
 	nOK := 0
 	nUpdate := 0
+	nNA := 0
 	nUnknown := 0
 
 	for _, r := range rows {
@@ -411,6 +421,8 @@ func (d *doctorApp) renderResults() *tui.Element {
 			nOK++
 		case "UPDATE":
 			nUpdate++
+		case "N/A":
+			nNA++
 		default:
 			nUnknown++
 		}
@@ -434,6 +446,8 @@ func (d *doctorApp) renderResults() *tui.Element {
 			statusStyle = tui.NewStyle().Foreground(catppuccinGreen).Bold()
 		case "UPDATE":
 			statusStyle = tui.NewStyle().Foreground(catppuccinYellow).Bold()
+		case "N/A":
+			statusStyle = tui.NewStyle().Foreground(catppuccinDim)
 		default:
 			statusStyle = tui.NewStyle().Foreground(catppuccinRed).Bold()
 		}
@@ -482,6 +496,12 @@ func (d *doctorApp) renderResults() *tui.Element {
 	} else {
 		summaryRow.AddChild(tui.New(
 			tui.WithText("[ NEED UPDATE: 0 ]"),
+			tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+		))
+	}
+	if nNA > 0 {
+		summaryRow.AddChild(tui.New(
+			tui.WithText(fmt.Sprintf("[ NOT FOUND: %d ]", nNA)),
 			tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
 		))
 	}
