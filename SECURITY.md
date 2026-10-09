@@ -16,8 +16,6 @@ If you discover a security vulnerability in `workstation-doctor`, please report 
 1. **Do not open a public issue.**
 2. Use GitHub's **Private Vulnerability Reporting** feature on the repository:
    Navigate to the **Security** tab -> **Advisories** -> **Report a vulnerability**.
-3. If Private Vulnerability Reporting is unavailable, send an email to the project maintainer:
-   `rishivian@gmail.com` with the subject line `[SECURITY] workstation-doctor vulnerability`.
 
 ### What to Include in Your Report
 
