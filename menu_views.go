@@ -166,6 +166,144 @@ func (d *doctorApp) renderRunning() *tui.Element {
 	return wrapper
 }
 
+type dashboardRow struct {
+	Component string
+	Installed string
+	Latest    string
+	Status    string // "OK", "UPDATE", "UNKNOWN"
+	Note      string
+	Key       doctor.FindingKey
+}
+
+func buildDashboardRows(report doctor.AuditReport) []dashboardRow {
+	byCheck := map[string][]doctor.Finding{}
+	var checkOrder []string
+	for _, f := range report.Findings {
+		id := f.Key.CheckID
+		if len(byCheck[id]) == 0 {
+			checkOrder = append(checkOrder, id)
+		}
+		byCheck[id] = append(byCheck[id], f)
+	}
+
+	if len(report.Checks) > 0 {
+		checkOrder = nil
+		seen := map[string]bool{}
+		for _, c := range report.Checks {
+			if !seen[c.ID] {
+				seen[c.ID] = true
+				checkOrder = append(checkOrder, c.ID)
+			}
+		}
+	}
+
+	var rows []dashboardRow
+	for _, cid := range checkOrder {
+		findings := byCheck[cid]
+		if len(findings) == 0 {
+			rows = append(rows, dashboardRow{
+				Component: cid,
+				Installed: "-",
+				Latest:    "-",
+				Status:    "UNKNOWN",
+				Note:      "No applicable instance was established within the selected scope.",
+				Key:       doctor.FindingKey{CheckID: cid},
+			})
+			continue
+		}
+		if len(findings) == 1 {
+			f := findings[0]
+			inst := "-"
+			latest := "-"
+			for _, ev := range f.Evidence {
+				lbl := strings.ToLower(ev.Label)
+				if strings.Contains(lbl, "installed") || strings.Contains(lbl, "version") {
+					inst = ev.Value
+				}
+				if strings.Contains(lbl, "upstream") || strings.Contains(lbl, "release") || strings.Contains(lbl, "latest") {
+					latest = ev.Value
+				}
+			}
+			if f.Outcome == doctor.OutcomeOK && latest == "-" && inst != "-" {
+				latest = inst
+			}
+			if inst == "-" && strings.Contains(cid, "config") {
+				if f.Outcome == doctor.OutcomeOK {
+					inst = "valid"
+					latest = "valid"
+				} else {
+					inst = "invalid"
+					latest = "valid"
+				}
+			}
+			st := "UNKNOWN"
+			switch f.Outcome {
+			case doctor.OutcomeOK:
+				st = "OK"
+			case doctor.OutcomeAttention:
+				st = "UPDATE"
+			}
+			rows = append(rows, dashboardRow{
+				Component: cid,
+				Installed: inst,
+				Latest:    latest,
+				Status:    st,
+				Note:      f.Explanation,
+				Key:       f.Key,
+			})
+		} else {
+			nOK, nAttn, nUnk := 0, 0, 0
+			for _, f := range findings {
+				switch f.Outcome {
+				case doctor.OutcomeOK:
+					nOK++
+				case doctor.OutcomeAttention:
+					nAttn++
+				default:
+					nUnk++
+				}
+			}
+			st := "OK"
+			if nAttn > 0 {
+				st = "UPDATE"
+			} else if nUnk > 0 && nOK == 0 {
+				st = "UNKNOWN"
+			}
+			var unit string
+			switch {
+			case strings.Contains(cid, "skill"):
+				unit = "skills"
+			case strings.Contains(cid, "plugin"):
+				unit = "plugins"
+			case strings.Contains(cid, "pack") || strings.Contains(cid, "brew") || strings.Contains(cid, "npm"):
+				unit = "pkgs"
+			default:
+				unit = "items"
+			}
+			inst := fmt.Sprintf("%d %s", len(findings), unit)
+			latest := "current"
+			if nAttn > 0 {
+				latest = fmt.Sprintf("%d need update", nAttn)
+			}
+			note := fmt.Sprintf("all %s are current and valid", unit)
+			if nUnk > 0 && nOK == 0 {
+				note = findings[0].Explanation
+			} else if nAttn > 0 || nUnk > 0 {
+				note = fmt.Sprintf("%d ok, %d attention, %d unknown", nOK, nAttn, nUnk)
+			}
+			rows = append(rows, dashboardRow{
+				Component: cid,
+				Installed: inst,
+				Latest:    latest,
+				Status:    st,
+				Note:      note,
+				Key:       findings[0].Key,
+			})
+		}
+	}
+	return rows
+}
+
 func (d *doctorApp) renderResults() *tui.Element {
 	root := tui.New(
 		tui.WithDisplay(tui.DisplayFlex),
@@ -177,9 +315,8 @@ func (d *doctorApp) renderResults() *tui.Element {
 		tui.WithWidthPercent(100.0),
 	)
 
-	headerText := "Workstation Audit Results"
 	title := tui.New(
-		tui.WithText(headerText),
+		tui.WithText("Workstation Audit Results"),
 		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinBlue).Bold()),
 	)
 	root.AddChild(title)
@@ -190,10 +327,11 @@ func (d *doctorApp) renderResults() *tui.Element {
 		tui.WithDirection(tui.Row),
 		tui.WithHeight(1),
 	)
-	colHeader.AddChild(tui.New(tui.WithWidth(26), tui.WithText("INTEGRATION"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
-	colHeader.AddChild(tui.New(tui.WithWidth(24), tui.WithText("CHECK"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
-	colHeader.AddChild(tui.New(tui.WithWidth(14), tui.WithText("OUTCOME"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
-	colHeader.AddChild(tui.New(tui.WithFlexGrow(1.0), tui.WithText("EXPLANATION"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
+	colHeader.AddChild(tui.New(tui.WithWidth(26), tui.WithText("COMPONENT"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
+	colHeader.AddChild(tui.New(tui.WithWidth(18), tui.WithText("INSTALLED"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
+	colHeader.AddChild(tui.New(tui.WithWidth(18), tui.WithText("LATEST"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
+	colHeader.AddChild(tui.New(tui.WithWidth(12), tui.WithText("STATUS"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
+	colHeader.AddChild(tui.New(tui.WithFlexGrow(1.0), tui.WithText("NOTE"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
 	root.AddChild(colHeader)
 
 	sep := tui.New(
@@ -203,18 +341,19 @@ func (d *doctorApp) renderResults() *tui.Element {
 	root.AddChild(sep)
 
 	report := d.report.Get()
-	findings := report.Findings
+	rows := buildDashboardRows(report)
+
 	offset := d.scrollOffset.Get()
-	if offset > len(findings)-1 && len(findings) > 0 {
-		offset = len(findings) - 1
+	if offset > len(rows)-1 && len(rows) > 0 {
+		offset = len(rows) - 1
 	}
 
-	visible := findings
-	if offset > 0 && offset < len(findings) {
-		visible = findings[offset:]
+	visible := rows
+	if offset > 0 && offset < len(rows) {
+		visible = rows[offset:]
 	}
 
-	maxDisplay := 20
+	maxDisplay := 22
 	if len(visible) > maxDisplay {
 		visible = visible[:maxDisplay]
 	}
@@ -226,42 +365,54 @@ func (d *doctorApp) renderResults() *tui.Element {
 	)
 
 	nOK := 0
-	nAttention := 0
+	nUpdate := 0
 	nUnknown := 0
 
-	for _, f := range findings {
-		switch f.Outcome {
-		case doctor.OutcomeOK:
+	for _, r := range rows {
+		switch r.Status {
+		case "OK":
 			nOK++
-		case doctor.OutcomeAttention:
-			nAttention++
+		case "UPDATE":
+			nUpdate++
 		default:
 			nUnknown++
 		}
 	}
 
-	for _, f := range visible {
+	currentSel := d.selectedResult.Get()
+
+	for idx, r := range visible {
+		actualIdx := offset + idx
+		isSelected := actualIdx == currentSel
+
 		row := tui.New(
 			tui.WithDisplay(tui.DisplayFlex),
 			tui.WithDirection(tui.Row),
 			tui.WithHeight(1),
 		)
 
-		var outcomeStyle tui.Style
-		switch f.Outcome {
-		case doctor.OutcomeOK:
-			outcomeStyle = tui.NewStyle().Foreground(catppuccinGreen).Bold()
-		case doctor.OutcomeAttention:
-			outcomeStyle = tui.NewStyle().Foreground(catppuccinYellow).Bold()
+		var statusStyle tui.Style
+		switch r.Status {
+		case "OK":
+			statusStyle = tui.NewStyle().Foreground(catppuccinGreen).Bold()
+		case "UPDATE":
+			statusStyle = tui.NewStyle().Foreground(catppuccinYellow).Bold()
 		default:
-			outcomeStyle = tui.NewStyle().Foreground(catppuccinRed).Bold()
+			statusStyle = tui.NewStyle().Foreground(catppuccinRed).Bold()
 		}
 
 		compStyle := tui.NewStyle().Bold()
-		row.AddChild(tui.New(tui.WithWidth(26), tui.WithText(trunc(f.Key.IntegrationID, 24)), tui.WithTextStyle(compStyle)))
-		row.AddChild(tui.New(tui.WithWidth(24), tui.WithText(trunc(f.Key.CheckID, 22)), tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim))))
-		row.AddChild(tui.New(tui.WithWidth(14), tui.WithText(string(f.Outcome)), tui.WithTextStyle(outcomeStyle)))
-		row.AddChild(tui.New(tui.WithFlexGrow(1.0), tui.WithText(f.Explanation)))
+		prefix := "  "
+		if isSelected {
+			prefix = "► "
+			compStyle = compStyle.Foreground(catppuccinGreen)
+		}
+
+		row.AddChild(tui.New(tui.WithWidth(26), tui.WithText(prefix+trunc(r.Component, 23)), tui.WithTextStyle(compStyle)))
+		row.AddChild(tui.New(tui.WithWidth(18), tui.WithText(trunc(r.Installed, 16)), tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim))))
+		row.AddChild(tui.New(tui.WithWidth(18), tui.WithText(trunc(r.Latest, 16)), tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim))))
+		row.AddChild(tui.New(tui.WithWidth(12), tui.WithText(r.Status), tui.WithTextStyle(statusStyle)))
+		row.AddChild(tui.New(tui.WithFlexGrow(1.0), tui.WithText(r.Note)))
 
 		tableBox.AddChild(row)
 	}
@@ -284,17 +435,17 @@ func (d *doctorApp) renderResults() *tui.Element {
 		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinGreen).Bold()),
 	))
 	summaryRow.AddChild(tui.New(
-		tui.WithText(fmt.Sprintf("▲ %d ATTENTION", nAttention)),
+		tui.WithText(fmt.Sprintf("▲ %d NEED UPDATE", nUpdate)),
 		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow).Bold()),
 	))
 	summaryRow.AddChild(tui.New(
-		tui.WithText(fmt.Sprintf("? %d OTHER/UNKNOWN", nUnknown)),
+		tui.WithText(fmt.Sprintf("? %d UNKNOWN", nUnknown)),
 		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinRed).Bold()),
 	))
 	root.AddChild(summaryRow)
 
 	nav := tui.New(
-		tui.WithText("[Esc / Enter / b: Back to Menu · ↑/↓: Scroll · q: Quit]"),
+		tui.WithText("[Esc / b: Back to Menu · Enter / d: Details · ↑/↓: Navigate · q: Quit]"),
 		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
 	)
 	root.AddChild(nav)
@@ -332,28 +483,95 @@ func (d *doctorApp) renderManual() *tui.Element {
 	)
 
 	report := d.report.Get()
-	var manualActions []doctor.ActionProposal
+	type manualItem struct {
+		Component string
+		Title     string
+		Reason    string
+		Command   string
+		URL       string
+	}
+	var items []manualItem
+
+	seen := map[string]bool{}
+
 	for _, f := range report.Findings {
 		for _, a := range f.Actions {
 			if a.Mode == doctor.ActionManual {
-				manualActions = append(manualActions, a)
+				key := f.Key.CheckID + ":" + a.Label
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+
+				cmd := ""
+				if len(a.Steps) > 0 {
+					cmd = a.Steps[0].Command.Executable
+					if len(a.Steps[0].Command.Args) > 0 {
+						cmd += " " + strings.Join(a.Steps[0].Command.Args, " ")
+					}
+				}
+				urlStr := ""
+				if len(f.References) > 0 {
+					urlStr = f.References[0].URL
+				}
+				items = append(items, manualItem{
+					Component: f.Key.CheckID,
+					Title:     a.Label,
+					Reason:    a.Reason,
+					Command:   cmd,
+					URL:       urlStr,
+				})
+			}
+		}
+		if f.Outcome == doctor.OutcomeAttention && len(f.Actions) == 0 {
+			key := f.Key.CheckID + ":attention"
+			if !seen[key] {
+				seen[key] = true
+				urlStr := ""
+				if len(f.References) > 0 {
+					urlStr = f.References[0].URL
+				}
+				items = append(items, manualItem{
+					Component: f.Key.CheckID,
+					Title:     "Review available update",
+					Reason:    f.Explanation,
+					URL:       urlStr,
+				})
 			}
 		}
 	}
 
-	if len(manualActions) == 0 {
+	if len(items) == 0 {
 		msg := tui.New(tui.WithText("No manual action is needed. All components are current."))
 		contentBox.AddChild(msg)
 	} else {
-		for i, a := range manualActions {
+		for i, item := range items {
 			stepCard := tui.New(
 				tui.WithDisplay(tui.DisplayFlex),
 				tui.WithDirection(tui.Column),
+				tui.WithGap(0),
 			)
 			stepCard.AddChild(tui.New(
-				tui.WithText(fmt.Sprintf("%d. %s (%s)", i+1, a.Label, a.Reason)),
+				tui.WithText(fmt.Sprintf("%d. %s: %s", i+1, item.Component, item.Title)),
 				tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinMauve).Bold()),
 			))
+			if item.Reason != "" && item.Reason != item.Title {
+				stepCard.AddChild(tui.New(
+					tui.WithText("   "+item.Reason),
+					tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+				))
+			}
+			if item.Command != "" {
+				stepCard.AddChild(tui.New(
+					tui.WithText("   $ "+item.Command),
+					tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow)),
+				))
+			} else if item.URL != "" {
+				stepCard.AddChild(tui.New(
+					tui.WithText("   Documentation: "+item.URL),
+					tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinBlue)),
+				))
+			}
 			contentBox.AddChild(stepCard)
 		}
 	}

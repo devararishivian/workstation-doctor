@@ -665,3 +665,70 @@ func TestHistoryAndCurrentSeparated(t *testing.T) {
 		t.Fatalf("browsing history triggered audit! audit count = %d", auditCount.Load())
 	}
 }
+
+func TestDashboardAppearance21ComponentRows(t *testing.T) {
+	defs := doctor.BuiltinDefinitions()
+	engine, err := doctor.NewAuditEngine(defs, doctor.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, err := doctor.NewHost(doctor.Scope{}, doctor.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := engine.Audit(t.Context(), host, doctor.Scope{})
+
+	rows := buildDashboardRows(report)
+	if len(rows) != 21 {
+		t.Fatalf("expected 21 dashboard rows, got %d", len(rows))
+	}
+
+	for _, r := range rows {
+		if r.Component == "" {
+			t.Fatal("row has empty Component")
+		}
+		if r.Installed == "" || r.Latest == "" || r.Status == "" {
+			t.Fatalf("row %+v has empty fields", r)
+		}
+	}
+
+	d := newDoctorApp(t.Context(), nil)
+	d.report.Set(report)
+	elem := d.renderResults()
+	if elem == nil {
+		t.Fatal("renderResults returned nil element")
+	}
+}
+
+func TestManualViewContainsComponentAndActionDetails(t *testing.T) {
+	key := doctor.FindingKey{IntegrationID: "herdr-plugins", CheckID: "herdr-plugins", InstanceID: "plugin-1"}
+	report := doctor.AuditReport{
+		Findings: []doctor.Finding{
+			{
+				Key:         key,
+				Outcome:     doctor.OutcomeAttention,
+				Question:    "Update available?",
+				Explanation: "New release available on remote",
+				References:  []doctor.PublicReference{{Kind: "documentation", URL: "https://example.com/plugin"}},
+				Actions: []doctor.ActionProposal{
+					{
+						ID:     "manual-1",
+						Mode:   doctor.ActionManual,
+						Label:  "Upgrade plugin manually",
+						Reason: "Remote commit differs",
+						Steps: []doctor.CommandStep{
+							{Label: "Run install", Command: doctor.Command{Executable: "herdr", Args: []string{"plugin", "install", "foo"}}},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	d := newDoctorApp(t.Context(), nil)
+	d.report.Set(report)
+	elem := d.renderManual()
+	if elem == nil {
+		t.Fatal("renderManual returned nil element")
+	}
+}

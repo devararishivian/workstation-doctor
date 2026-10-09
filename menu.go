@@ -51,13 +51,54 @@ func (d *doctorApp) KeyMap() tui.KeyMap {
 			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
 			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.stop() }),
 		}
-	case "results", "manual", "fix_done":
+	case "results":
+		return tui.KeyMap{
+			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.mode.Set("menu") }),
+			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.mode.Set("menu") }),
+			tui.On(tui.KeyEnter, func(_ tui.KeyEvent) { d.openSelectedComponentDetail() }),
+			tui.On(tui.Rune('d'), func(_ tui.KeyEvent) { d.openSelectedComponentDetail() }),
+			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
+			tui.On(tui.KeyDown, func(_ tui.KeyEvent) {
+				d.selectedResult.Update(func(v int) int {
+					rows := buildDashboardRows(d.report.Get())
+					if v < len(rows)-1 {
+						return v + 1
+					}
+					return v
+				})
+			}),
+			tui.On(tui.Rune('j'), func(_ tui.KeyEvent) {
+				d.selectedResult.Update(func(v int) int {
+					rows := buildDashboardRows(d.report.Get())
+					if v < len(rows)-1 {
+						return v + 1
+					}
+					return v
+				})
+			}),
+			tui.On(tui.KeyUp, func(_ tui.KeyEvent) {
+				d.selectedResult.Update(func(v int) int {
+					if v > 0 {
+						return v - 1
+					}
+					return 0
+				})
+			}),
+			tui.On(tui.Rune('k'), func(_ tui.KeyEvent) {
+				d.selectedResult.Update(func(v int) int {
+					if v > 0 {
+						return v - 1
+					}
+					return 0
+				})
+			}),
+		}
+	case "manual", "fix_done":
 		return tui.KeyMap{
 			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.mode.Set("menu") }),
 			tui.On(tui.KeyEnter, func(_ tui.KeyEvent) { d.mode.Set("menu") }),
 			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.mode.Set("menu") }),
 			tui.On(tui.Rune('m'), func(_ tui.KeyEvent) { d.mode.Set("menu") }),
-			tui.On(tui.Rune('d'), func(_ tui.KeyEvent) { d.openSelectedDetail() }),
 			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
 			tui.On(tui.KeyDown, func(_ tui.KeyEvent) { d.scrollOffset.Update(func(v int) int { return v + 1 }) }),
 			tui.On(tui.Rune('j'), func(_ tui.KeyEvent) { d.scrollOffset.Update(func(v int) int { return v + 1 }) }),
@@ -203,9 +244,41 @@ func (d *doctorApp) runAction(key string) {
 	case "check":
 		d.startAudit()
 	case "manual":
+		rep := d.report.Get()
+		if len(rep.Findings) == 0 {
+			d.mode.Set("running")
+			d.statusMsg.Set("Running audit to collect manual steps...")
+			go func() {
+				if d.service != nil {
+					rep = d.service.Audit(d.ctx)
+				}
+				d.queueUpdate(func() {
+					d.report.Set(rep)
+					d.scrollOffset.Set(0)
+					d.mode.Set("manual")
+				})
+			}()
+			return
+		}
+		d.scrollOffset.Set(0)
 		d.mode.Set("manual")
 	case "fix":
-		d.openSelectedDetail()
+		rep := d.report.Get()
+		if len(rep.Findings) == 0 {
+			d.mode.Set("running")
+			d.statusMsg.Set("Running audit to find pending fixes...")
+			go func() {
+				if d.service != nil {
+					rep = d.service.Audit(d.ctx)
+				}
+				d.queueUpdate(func() {
+					d.report.Set(rep)
+					d.triggerAutomaticFix()
+				})
+			}()
+			return
+		}
+		d.triggerAutomaticFix()
 	case "history":
 		d.loadHistory()
 	case "quit":

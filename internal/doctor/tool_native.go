@@ -30,21 +30,31 @@ func checkGithubTool(ctx context.Context, host *Host, instance Instance, id, rep
 		return []Finding{f}
 	}
 	raw, err := host.Fetch(ctx, "https://api.github.com/repos/"+repo+"/releases/latest")
-	if err != nil || len(raw) > int(DefaultLimits().MaxHTTPBytes) {
-		f.Explanation = "Upstream lookup is unavailable. Installed version evidence is retained."
-		if ctx.Err() != nil {
-			f.Outcome = OutcomeCanceled
-		}
-		return []Finding{f}
-	}
 	var release struct {
 		TagName    string `json:"tag_name"`
 		HTMLURL    string `json:"html_url"`
 		Prerelease bool   `json:"prerelease"`
 		Draft      bool   `json:"draft"`
 	}
-	if json.Unmarshal(raw, &release) != nil || release.Prerelease || release.Draft {
-		return []Finding{f}
+	if err != nil || len(raw) > int(DefaultLimits().MaxHTTPBytes) || json.Unmarshal(raw, &release) != nil || release.Prerelease || release.Draft || release.TagName == "" {
+		// Fallback to tags when releases/latest is not published (e.g. ghostty)
+		rawTags, errTags := host.Fetch(ctx, "https://api.github.com/repos/"+repo+"/tags")
+		if errTags != nil || len(rawTags) > int(DefaultLimits().MaxHTTPBytes) {
+			f.Explanation = "Upstream lookup is unavailable. Installed version evidence is retained."
+			if ctx.Err() != nil {
+				f.Outcome = OutcomeCanceled
+			}
+			return []Finding{f}
+		}
+		var tags []struct {
+			Name string `json:"name"`
+		}
+		if json.Unmarshal(rawTags, &tags) != nil || len(tags) == 0 {
+			f.Explanation = "Upstream lookup is unavailable. Installed version evidence is retained."
+			return []Finding{f}
+		}
+		release.TagName = tags[0].Name
+		release.HTMLURL = "https://github.com/" + repo + "/releases/tag/" + tags[0].Name
 	}
 	order, err := CompareVersions(instance.Version.Value, release.TagName, "semver")
 	if err != nil {

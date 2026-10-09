@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"time"
@@ -118,6 +119,12 @@ func NpmInventory(ctx context.Context, host *Host, scope Scope) (Inventory, erro
 	prefix := host.Env["NPM_CONFIG_PREFIX"]
 	if prefix == "" {
 		prefix = filepath.Dir(filepath.Dir(path))
+		if filepath.Base(filepath.Dir(prefix)) == "opt" {
+			hbRoot := filepath.Dir(filepath.Dir(prefix))
+			if info, err := os.Stat(packageRoot(hbRoot)); err == nil && info.IsDir() {
+				prefix = hbRoot
+			}
+		}
 	}
 	root := packageRoot(prefix)
 	if inventory, ok := cachedInventory(host.inventory, scope, "npm", path, root); ok {

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -164,9 +165,27 @@ func configurationFinding(ctx context.Context, h *Host, i Instance, id string, p
 				break
 			}
 			f.Explanation = "TOML syntax is valid. Optional omitted sections do not imply obsolete configuration; runtime semantics are not established."
+		case "ghostty":
+			valid := true
+			for line := range strings.SplitSeq(string(raw), "\n") {
+				trimmed := strings.TrimSpace(line)
+				if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+					continue
+				}
+				if !strings.Contains(trimmed, "=") {
+					valid = false
+					break
+				}
+			}
+			if !valid {
+				f.Outcome = OutcomeAttention
+				f.Explanation = "Ghostty configuration syntax is invalid: expected key = value lines."
+			} else {
+				f.Explanation = "Ghostty configuration syntax is valid."
+			}
 		default:
 			f.Outcome = OutcomeUnknown
-			f.Explanation = "Ghostty configuration exists. Version-specific option semantics and included files require native diagnostics whose startup safety is not established."
+			f.Explanation = "Configuration exists but effective semantics require native diagnostics."
 		}
 	}
 	if ctx.Err() != nil {

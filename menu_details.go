@@ -186,6 +186,102 @@ func instanceDetail(report doctor.AuditReport, id string) (Detail, error) {
 	return detail, nil
 }
 
+func componentDetail(report doctor.AuditReport, checkID string) Detail {
+	var findings []doctor.Finding
+	for _, f := range report.Findings {
+		if f.Key.CheckID == checkID {
+			findings = append(findings, f)
+		}
+	}
+	if len(findings) == 0 {
+		return Detail{
+			Title: fmt.Sprintf("Component: %s", checkID),
+			Sections: []DetailSection{
+				{
+					Heading: "Status",
+					Rows: []DetailRow{
+						{Label: "Outcome", Value: "Unknown"},
+						{Label: "Explanation", Value: "No findings recorded for this component"},
+					},
+				},
+			},
+		}
+	}
+	if len(findings) == 1 {
+		det, err := findingDetail(report, findings[0].Key)
+		if err == nil {
+			return det
+		}
+	}
+
+	nOK, nAttention, nUnknown := 0, 0, 0
+	for _, f := range findings {
+		switch f.Outcome {
+		case doctor.OutcomeOK:
+			nOK++
+		case doctor.OutcomeAttention:
+			nAttention++
+		default:
+			nUnknown++
+		}
+	}
+
+	detail := Detail{
+		Title: fmt.Sprintf("Component: %s (%d items inspected)", checkID, len(findings)),
+		Sections: []DetailSection{
+			{
+				Heading: "Summary",
+				Rows: []DetailRow{
+					{Label: "Check", Value: checkID},
+					{Label: "Total Items", Value: fmt.Sprintf("%d", len(findings))},
+					{Label: "OK", Value: fmt.Sprintf("%d", nOK)},
+					{Label: "Attention / Updates", Value: fmt.Sprintf("%d", nAttention)},
+					{Label: "Unknown", Value: fmt.Sprintf("%d", nUnknown)},
+				},
+			},
+		},
+	}
+
+	var attentionRows []DetailRow
+	for _, f := range findings {
+		if f.Outcome == doctor.OutcomeAttention {
+			instID := f.Key.InstanceID
+			if instID == "" {
+				instID = f.Key.IntegrationID
+			}
+			attentionRows = append(attentionRows, DetailRow{
+				Label:  instID,
+				Value:  f.Explanation,
+				Source: string(f.Outcome),
+			})
+		}
+	}
+	if len(attentionRows) > 0 {
+		detail.Sections = append(detail.Sections, DetailSection{
+			Heading: "Items Requiring Attention",
+			Rows:    attentionRows,
+		})
+	}
+
+	var actRows []DetailRow
+	for _, f := range findings {
+		for _, a := range f.Actions {
+			actRows = append(actRows, DetailRow{
+				Label: fmt.Sprintf("%s [%s]", a.Label, a.Mode),
+				Value: a.Reason,
+			})
+		}
+	}
+	if len(actRows) > 0 {
+		detail.Sections = append(detail.Sections, DetailSection{
+			Heading: "Proposed Actions",
+			Rows:    actRows,
+		})
+	}
+
+	return detail
+}
+
 func actionDetail(preview app.Preview) Detail {
 	detail := Detail{
 		Title: fmt.Sprintf("Action Preview: %s", preview.Label),

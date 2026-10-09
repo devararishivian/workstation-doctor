@@ -27,12 +27,13 @@ type doctorApp struct {
 	mu sync.Mutex
 
 	// UI state
-	mode         *tui.State[string]
-	selectedMenu *tui.State[int]
-	scrollOffset *tui.State[int]
-	statusMsg    *tui.State[string]
-	lastSummary  *tui.State[string]
-	tickCount    *tui.State[int]
+	mode           *tui.State[string]
+	selectedMenu   *tui.State[int]
+	selectedResult *tui.State[int]
+	scrollOffset   *tui.State[int]
+	statusMsg      *tui.State[string]
+	lastSummary    *tui.State[string]
+	tickCount      *tui.State[int]
 
 	// Redesign service state
 	report            *tui.State[doctor.AuditReport]
@@ -63,6 +64,7 @@ func newDoctorApp(ctx context.Context, service *app.Service) *doctorApp {
 		service:        service,
 		mode:           tui.NewState("menu"),
 		selectedMenu:   tui.NewState(0),
+		selectedResult: tui.NewState(0),
 		scrollOffset:   tui.NewState(0),
 		statusMsg:      tui.NewState(""),
 		lastSummary:    tui.NewState(""),
@@ -85,6 +87,7 @@ func (d *doctorApp) BindApp(app *tui.App) {
 	d.app = app
 	d.mode.BindApp(app)
 	d.selectedMenu.BindApp(app)
+	d.selectedResult.BindApp(app)
 	d.scrollOffset.BindApp(app)
 	d.statusMsg.BindApp(app)
 	d.lastSummary.BindApp(app)
@@ -141,28 +144,21 @@ func (d *doctorApp) startAudit() {
 	}()
 }
 
-func (d *doctorApp) showFindingDetail(key doctor.FindingKey) {
+func (d *doctorApp) openSelectedComponentDetail() {
 	rep := d.report.Get()
-	det, err := findingDetail(rep, key)
-	if err != nil {
-		d.statusMsg.Set(err.Error())
+	rows := buildDashboardRows(rep)
+	if len(rows) == 0 {
 		return
 	}
+	sel := d.selectedResult.Get()
+	if sel < 0 || sel >= len(rows) {
+		sel = 0
+	}
+	row := rows[sel]
+	det := componentDetail(rep, row.Component)
 	d.activeDetail.Set(detailText(det))
 	d.scrollOffset.Set(0)
 	d.mode.Set("detail")
-}
-
-func (d *doctorApp) openSelectedDetail() {
-	rep := d.report.Get()
-	if len(rep.Findings) == 0 {
-		return
-	}
-	idx := d.scrollOffset.Get()
-	if idx < 0 || idx >= len(rep.Findings) {
-		idx = 0
-	}
-	d.showFindingDetail(rep.Findings[idx].Key)
 }
 
 func (d *doctorApp) prepareAction(key doctor.FindingKey, actionID string) {
@@ -309,6 +305,20 @@ func (d *doctorApp) openSelectedHistoryDetail() {
 		idx = 0
 	}
 	_ = d.showHistoryDetail(actions[idx])
+}
+
+func (d *doctorApp) triggerAutomaticFix() {
+	rep := d.report.Get()
+	for _, f := range rep.Findings {
+		for _, a := range f.Actions {
+			if a.Mode == doctor.ActionAutomatic {
+				d.prepareAction(f.Key, a.ID)
+				return
+			}
+		}
+	}
+	d.statusMsg.Set("No actions needed. All components are current.")
+	d.mode.Set("results")
 }
 
 func (d *doctorApp) stop() {

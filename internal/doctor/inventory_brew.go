@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 func readBrewReceipts(ctx context.Context, inventory Inventory) (Inventory, error) {
@@ -20,14 +20,20 @@ func readBrewReceipts(ctx context.Context, inventory Inventory) (Inventory, erro
 	}
 	count := 0
 	for _, pkg := range packages {
+		if strings.HasPrefix(pkg.Name(), ".") || !pkg.IsDir() {
+			continue
+		}
 		if !validFormulaName(pkg.Name()) {
-			return inventory, errors.New("formula identity is unsupported")
+			continue
 		}
 		versions, e := inventoryEntries(ctx, filepath.Join(cellar, pkg.Name()))
 		if e != nil {
-			return inventory, e
+			continue
 		}
 		for _, version := range versions {
+			if strings.HasPrefix(version.Name(), ".") || !version.IsDir() {
+				continue
+			}
 			count++
 			if count > DefaultLimits().MaxFiles {
 				return inventory, errors.New("homebrew receipts exceed entry limit")
@@ -35,23 +41,23 @@ func readBrewReceipts(ctx context.Context, inventory Inventory) (Inventory, erro
 			root := filepath.Join(cellar, pkg.Name(), version.Name())
 			raw, e := ReadBounded(ctx, filepath.Join(root, "INSTALL_RECEIPT.json"), DefaultLimits().MaxFileBytes)
 			if e != nil {
-				return inventory, e
+				continue
 			}
 			var receipt struct{ Source struct{ Tap, Spec string } }
 			if json.Unmarshal(raw, &receipt) != nil || !validText(receipt.Source.Tap, DefaultLimits().MaxIdentifierBytes) || receipt.Source.Tap == "" || receipt.Source.Spec != "stable" {
-				return inventory, errors.New("homebrew receipt format is unsupported")
+				continue
 			}
 			canonical, e := filepath.EvalSymlinks(root)
 			if e != nil {
-				return inventory, fmt.Errorf("resolve formula root: %w", e)
+				continue
 			}
 			cellarCanonical, e := filepath.EvalSymlinks(cellar)
 			if e != nil {
-				return inventory, fmt.Errorf("resolve cellar root: %w", e)
+				continue
 			}
 			rel, e := filepath.Rel(cellarCanonical, canonical)
 			if e != nil || !filepath.IsLocal(rel) {
-				return inventory, errors.New("formula root is outside selected cellar")
+				continue
 			}
 			item := InventoryItem{Package: receipt.Source.Tap + "/" + pkg.Name(), Root: canonical, InstalledVersion: version.Name(), Channel: "Homebrew stable formula", InstalledAt: parseReceiptInstallationTime(raw, inventory.ObservedAt), UpdateDecision: Fact{State: EvidenceUnavailable, Label: "Manager update availability", Source: "local Homebrew receipt", Note: "Formula repository metadata was not refreshed."}}
 			bins, e := inventoryEntries(ctx, filepath.Join(root, "bin"))
@@ -72,6 +78,47 @@ func readBrewReceipts(ctx context.Context, inventory Inventory) (Inventory, erro
 			inventory.Items = append(inventory.Items, item)
 		}
 	}
+
+	caskroom := filepath.Join(inventory.Root, "Caskroom")
+	casks, err := inventoryEntries(ctx, caskroom)
+	if err == nil {
+		for _, cask := range casks {
+			if strings.HasPrefix(cask.Name(), ".") || !cask.IsDir() {
+				continue
+			}
+			versions, e := inventoryEntries(ctx, filepath.Join(caskroom, cask.Name()))
+			if e != nil {
+				continue
+			}
+			for _, version := range versions {
+				if strings.HasPrefix(version.Name(), ".") || !version.IsDir() {
+					continue
+				}
+				caskRoot := filepath.Join(caskroom, cask.Name(), version.Name())
+				canonical, e := filepath.EvalSymlinks(caskRoot)
+				if e != nil {
+					continue
+				}
+				item := InventoryItem{
+					Package:          "homebrew/cask/" + cask.Name(),
+					Root:             canonical,
+					InstalledVersion: version.Name(),
+					Channel:          "Homebrew cask",
+					UpdateDecision:   Fact{State: EvidenceUnavailable, Label: "Manager update availability", Source: "local Homebrew cask", Note: "Cask repository metadata was not refreshed."},
+				}
+				alias := filepath.Join(inventory.Root, "bin", cask.Name())
+				resolved, e := filepath.EvalSymlinks(alias)
+				if e == nil {
+					target, e := filepath.EvalSymlinks(filepath.Join(caskRoot, cask.Name()))
+					if e == nil && samePath(target, resolved) {
+						item.Executables = append(item.Executables, alias)
+					}
+				}
+				inventory.Items = append(inventory.Items, item)
+			}
+		}
+	}
+
 	return inventory, nil
 }
 
