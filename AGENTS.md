@@ -60,3 +60,78 @@ terminal dashboard (TUI). All user-facing documentation and application text mus
    run `make vet test lint vuln`. Lint must report `0 issues.` and `govulncheck` must report 0 vulnerabilities.
 6. **No Machine-Specific Hardcoding**: Never commit personal usernames, private home paths, or live API credentials. Use
    test helpers (`t.TempDir()`, synthetic hosts) for tests.
+
+## 4. Release Workflow
+
+When publishing a new release, execute the following steps in sequence:
+
+### Step 1: Run Quality Gates
+Before creating a release, run all validation checks on the local `develop` branch:
+
+```sh
+make vet test lint vuln
+make test-platform EXPECT_OS=darwin   # On macOS
+make test-platform EXPECT_OS=linux    # On Linux
+```
+
+Make sure that `golangci-lint` reports 0 issues and `govulncheck` reports 0 vulnerabilities.
+
+### Step 2: Prepare Version and Demo Assets
+1. Update `var version` in `main.go` to the target Semantic Version (for example, `1.0.2`).
+2. If user interface or visual behavior changed, re-record the full interactive demo to `assets/demo.gif`:
+   - Use `asciinema` with window size `140x38`.
+   - Render to animated GIF using `agg --theme dracula`.
+   - Capture all screens: Main Menu, Results Table, Component Detail, Manual Steps, Action Preview, History List, History Detail, and Quit.
+3. Commit version and asset updates to `develop`:
+
+```sh
+git add main.go assets/demo.gif
+git commit -m "chore: bump version to X.Y.Z and update demo assets"
+```
+
+### Step 3: Synchronize Branches
+Push changes from `develop` and fast-forward merge them into `main`:
+
+```sh
+# Push develop branch
+git push origin develop
+
+# Switch to main and fast-forward merge
+git checkout main
+git merge develop --ff-only
+git push origin main
+```
+
+### Step 4: Tag the Release
+Create an annotated Git tag on `main` and push it to GitHub:
+
+```sh
+git tag -a vX.Y.Z -m "Release vX.Y.Z"
+git push origin vX.Y.Z
+```
+
+### Step 5: Publish Release with GoReleaser
+Run GoReleaser using your authenticated GitHub CLI token:
+
+```sh
+GITHUB_TOKEN=$(gh auth token) goreleaser release --clean
+```
+
+GoReleaser compiles multi-platform binaries (`darwin/arm64`, `darwin/amd64`, `linux/arm64`, `linux/amd64`), generates `checksums.txt`, and publishes the release assets directly to GitHub Releases.
+
+Remove the temporary `dist/` directory after release completion:
+
+```sh
+python3 -c "import shutil; shutil.rmtree('dist', ignore_errors=True)"
+```
+
+### Step 6: Return to Development Branch
+Switch back to `develop` and rebuild the local binary:
+
+```sh
+git checkout develop
+make build
+```
+
+Verify that `git status` reports a clean working tree.
+
