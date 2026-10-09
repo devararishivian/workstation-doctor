@@ -8,7 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"workstation-doctor/internal/doctor"
+
+	"github.com/devararishivian/workstation-doctor/internal/doctor"
 )
 
 func TestReleaseNotesBounds(t *testing.T) {

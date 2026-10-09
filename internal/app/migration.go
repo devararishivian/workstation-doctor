@@ -3,7 +3,8 @@ package app
 import (
 	"context"
 	"fmt"
-	"workstation-doctor/internal/store"
+
+	"github.com/devararishivian/workstation-doctor/internal/store"
 )
 
 // PreviewMigration generates a read-only preview of actions eligible for legacy migration.

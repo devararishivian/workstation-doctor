@@ -3,8 +3,9 @@ package main
 import (
 	"fmt"
 	"strings"
-	"workstation-doctor/internal/doctor"
-	"workstation-doctor/internal/store"
+
+	"github.com/devararishivian/workstation-doctor/internal/doctor"
+	"github.com/devararishivian/workstation-doctor/internal/store"
 
 	tui "github.com/grindlemire/go-tui"
 )

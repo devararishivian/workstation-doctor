@@ -10,8 +10,9 @@ import (
 	"slices"
 	"sync"
 	"time"
-	"workstation-doctor/internal/doctor"
-	"workstation-doctor/internal/store"
+
+	"github.com/devararishivian/workstation-doctor/internal/doctor"
+	"github.com/devararishivian/workstation-doctor/internal/store"
 )
 
 // HistoryWriter provides store write access for action lifecycle tracking.

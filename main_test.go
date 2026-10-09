@@ -7,8 +7,9 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"workstation-doctor/internal/doctor"
-	"workstation-doctor/internal/store"
+
+	"github.com/devararishivian/workstation-doctor/internal/doctor"
+	"github.com/devararishivian/workstation-doctor/internal/store"
 )
 
 func TestEntryNoWorkflowSubcommands(t *testing.T) {

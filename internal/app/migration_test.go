@@ -5,7 +5,8 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
-	"workstation-doctor/internal/doctor"
+
+	"github.com/devararishivian/workstation-doctor/internal/doctor"
 
 	_ "modernc.org/sqlite"
 )

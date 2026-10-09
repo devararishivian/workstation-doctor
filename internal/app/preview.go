@@ -8,7 +8,8 @@ import (
 	"maps"
 	"slices"
 	"strings"
-	"workstation-doctor/internal/doctor"
+
+	"github.com/devararishivian/workstation-doctor/internal/doctor"
 )
 
 // PreviewStep represents a safe presentation of a planned step without runnable raw commands.

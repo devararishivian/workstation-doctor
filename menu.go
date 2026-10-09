@@ -8,7 +8,8 @@ import (
 	"os/signal"
 	"time"
 	"unicode/utf8"
-	"workstation-doctor/internal/app"
+
+	"github.com/devararishivian/workstation-doctor/internal/app"
 
 	tui "github.com/grindlemire/go-tui"
 )

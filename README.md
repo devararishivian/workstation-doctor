@@ -28,22 +28,7 @@ agent skills.
 
 You can install `workstation-doctor` using any of the methods below.
 
-### Method 1: Homebrew (macOS and Linux)
-
-If you use Homebrew, install the formula directly from GitHub:
-
-```sh
-brew install devararishivian/tap/workstation-doctor
-```
-
-Or tap the repository first and install:
-
-```sh
-brew tap devararishivian/tap
-brew install workstation-doctor
-```
-
-### Method 2: Go Install
+### Method 1: Go Install
 
 If you have Go installed on your system, run:
 
@@ -53,7 +38,7 @@ go install github.com/devararishivian/workstation-doctor@latest
 
 Make sure that your `PATH` environment variable includes `$GOPATH/bin` or `$HOME/go/bin`.
 
-### Method 3: Download Pre-Built Binary
+### Method 2: Download Pre-Built Binary
 
 1. Open the [Releases page](https://github.com/devararishivian/workstation-doctor/releases).
 2. Download the archive for your operating system and CPU architecture.
@@ -64,7 +49,7 @@ tar -xzf workstation-doctor_*_darwin_arm64.tar.gz
 sudo mv workstation-doctor /usr/local/bin/
 ```
 
-### Method 4: Build from Source
+### Method 3: Build from Source
 
 To compile the application from source code:
 

@@ -9,8 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"workstation-doctor/internal/doctor"
-	"workstation-doctor/internal/store"
+
+	"github.com/devararishivian/workstation-doctor/internal/doctor"
+	"github.com/devararishivian/workstation-doctor/internal/store"
 )
 
 // RunCommandStep executes one direct-argv command step with process group isolation

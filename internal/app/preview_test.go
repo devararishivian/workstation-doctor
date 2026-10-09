@@ -2,7 +2,8 @@ package app
 
 import (
 	"testing"
-	"workstation-doctor/internal/doctor"
+
+	"github.com/devararishivian/workstation-doctor/internal/doctor"
 )
 
 func TestPreviewFrozenScope(t *testing.T) {

@@ -6,8 +6,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-	"workstation-doctor/internal/doctor"
-	"workstation-doctor/internal/store"
+
+	"github.com/devararishivian/workstation-doctor/internal/doctor"
+	"github.com/devararishivian/workstation-doctor/internal/store"
 )
 
 func syntheticServiceWithProposals(t *testing.T, stateDir string, openCalls *atomic.Int32, proposals ...doctor.ActionProposal) (*Service, doctor.FindingKey, doctor.ActionProposal) {

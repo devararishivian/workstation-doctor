@@ -9,9 +9,10 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-	"workstation-doctor/internal/app"
-	"workstation-doctor/internal/doctor"
-	"workstation-doctor/internal/store"
+
+	"github.com/devararishivian/workstation-doctor/internal/app"
+	"github.com/devararishivian/workstation-doctor/internal/doctor"
+	"github.com/devararishivian/workstation-doctor/internal/store"
 )
 
 func createLegacyHistory(t *testing.T, path string) {

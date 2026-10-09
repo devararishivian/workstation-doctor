@@ -1,4 +1,4 @@
-module workstation-doctor
+module github.com/devararishivian/workstation-doctor
 
 go 1.27.1
 

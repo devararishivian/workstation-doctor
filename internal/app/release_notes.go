@@ -7,7 +7,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
-	"workstation-doctor/internal/doctor"
+
+	"github.com/devararishivian/workstation-doctor/internal/doctor"
 )
 
 // ReleaseNotes carries bounded, sanitized release notes text retrieved from a public reference.
