@@ -65,6 +65,42 @@ make build
 sudo cp ./workstation-doctor /usr/local/bin/
 ```
 
+## Upgrading
+
+To update `workstation-doctor` to the latest version, follow the instructions for your installation method.
+
+### If Installed via Go Install
+
+Run the install command with the `@latest` tag:
+
+```sh
+go install github.com/devararishivian/workstation-doctor@latest
+```
+
+The Go toolchain downloads the newest release and replaces the binary in your `$GOPATH/bin`.
+
+### If Installed via Pre-Built Binary
+
+1. Open the [Releases page](https://github.com/devararishivian/workstation-doctor/releases/latest).
+2. Download the newest archive for your operating system and CPU architecture.
+3. Extract the archive and overwrite the executable in your `PATH`:
+
+```sh
+tar -xzf workstation-doctor_*_darwin_arm64.tar.gz
+sudo mv workstation-doctor /usr/local/bin/
+```
+
+### If Built from Source
+
+Pull the latest commits from the repository and recompile:
+
+```sh
+cd workstation-doctor
+git pull origin main
+make build
+sudo cp ./workstation-doctor /usr/local/bin/
+```
+
 ## How to Use
 
 To launch the dashboard, run:
