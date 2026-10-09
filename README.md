@@ -1,8 +1,10 @@
 # workstation-doctor
 
-`workstation-doctor` inspects developer tools on your computer and helps you maintain them safely through an interactive terminal user interface (TUI).
+`workstation-doctor` inspects developer tools on your computer and helps you maintain them safely through an interactive
+terminal user interface (TUI).
 
-The application inspects 18 components across coding agents, terminal tools, package managers, plugin registries, and agent skills.
+The application inspects 18 components across coding agents, terminal tools, package managers, plugin registries, and
+agent skills.
 
 ![workstation-doctor demo](assets/demo.gif)
 
@@ -12,12 +14,14 @@ The application inspects 18 components across coding agents, terminal tools, pac
 - **Read-Only Inspection**: Health checks read files and call version commands without altering system state.
 - **Safe Maintenance**: Maintenance commands run only when you give explicit approval.
 - **Exclusive Process Lock**: An advisory lock prevents concurrent maintenance runs on the same workstation.
-- **Audit History**: All maintenance attempts, step results, and verification outcomes are stored in a local SQLite database.
+- **Audit History**: All maintenance attempts, step results, and verification outcomes are stored in a local SQLite
+  database.
 
 ## System Requirements
 
 - **Operating System**: macOS (Darwin arm64 or amd64) or Linux (amd64 or arm64).
-- **Terminal**: An interactive terminal emulator that supports ANSI escape sequences (such as Ghostty, Alacritty, iTerm2, or Kitty).
+- **Terminal**: An interactive terminal emulator that supports ANSI escape sequences (such as Ghostty, Alacritty,
+  iTerm2, or Kitty).
 - **Go**: Go 1.22 or newer (required only when you build from source or use `go install`).
 
 ## Installation
@@ -84,7 +88,8 @@ To launch the dashboard, run:
 workstation-doctor
 ```
 
-The application opens an interactive dashboard. If you run the program in a non-interactive shell or pipe its output, the program exits immediately with:
+The application opens an interactive dashboard. If you run the program in a non-interactive shell or pipe its output,
+the program exits immediately with:
 
 ```text
 An interactive terminal is required.
@@ -105,7 +110,8 @@ An interactive terminal is required.
 
 You can customize program behavior with command-line flags:
 
-- `--db PATH`: Set the absolute path for the action history SQLite database. Defaults to your operating system state directory.
+- `--db PATH`: Set the absolute path for the action history SQLite database. Defaults to your operating system state
+  directory.
 - `--project PATH`: Set a project directory to inspect project-scoped tools and skills.
 - `--location INTEGRATION=PATH`: Override the configuration path for an integration (repeatable).
 - `--skill-root PATH`: Add an extra directory to scan for Agent Skills (repeatable).
@@ -119,6 +125,7 @@ You can customize program behavior with command-line flags:
 The application organizes checks into four categories:
 
 ### Developer Tools
+
 1. **pi**: CLI binary discovery, npm provenance, and version checks.
 2. **herdr**: Terminal runtime binary, GitHub release comparison, and provenance.
 3. **ghostty**: Terminal application binary discovery and version checks.
@@ -129,16 +136,19 @@ The application organizes checks into four categories:
 8. **gortex**: Code graph tool binary discovery and release comparison.
 
 ### Tool Configurations
+
 9. **ghostty-config-valid**: Syntax validation of Ghostty configuration.
 10. **herdr-config-valid**: Syntax and section validation of Herdr TOML configuration.
 11. **pi-config-valid**: Syntax validation of Pi JSON settings and MCP declarations.
 
 ### Package Managers and Inventories
+
 12. **brew-outdated**: Homebrew formula and cask update inspection (auto-update disabled).
 13. **npm-outdated-g**: Global npm package receipt inspection and pin evaluation.
 14. **pi-packages**: Declared npm, Git, and local extensions in user and project scope.
 
 ### Integrations and Resources
+
 15. **superpowers**: Superpowers harness repository status, tracking branch, and commit sync.
 16. **herdr-integr**: Verification of agent hooks and integration state.
 17. **herdr-plugins**: Plugin declarations in user registry and remote commit sync.
@@ -150,22 +160,31 @@ Maintenance operations follow a strict safety process:
 
 1. **Inspection**: The application inspects current tool versions and reads available updates.
 2. **Preview**: You see the exact commands, targets, and expected outcomes before execution.
-3. **Confirmation**: You must press `y` to approve the action. If you press any other key, the application cancels the action.
-4. **Advisory Lock**: The application acquires a kernel lock (`Flock`) so that two maintenance operations cannot run at the same time.
-5. **Execution**: The application records the start of the action, then executes commands inside isolated process groups.
-6. **Verification**: After commands complete, the application runs verification checks to make sure that the update succeeded.
+3. **Confirmation**: You must press `y` to approve the action. If you press any other key, the application cancels the
+   action.
+4. **Advisory Lock**: The application acquires a kernel lock (`Flock`) so that two maintenance operations cannot run at
+   the same time.
+5. **Execution**: The application records the start of the action, then executes commands inside isolated process
+   groups.
+6. **Verification**: After commands complete, the application runs verification checks to make sure that the update
+   succeeded.
 
 ## Limitations
 
-- **Internet Access**: Checking for the latest tool versions requires an internet connection. If the network is unavailable, checks report unknown status and do not block the user interface.
-- **Homebrew Auto-Update**: Homebrew checks run with `HOMEBREW_NO_AUTO_UPDATE=1` to prevent long pauses during audits. The check reports outdated packages based on your local Homebrew metadata.
+- **Internet Access**: Checking for the latest tool versions requires an internet connection. If the network is
+  unavailable, checks report unknown status and do not block the user interface.
+- **Homebrew Auto-Update**: Homebrew checks run with `HOMEBREW_NO_AUTO_UPDATE=1` to prevent long pauses during audits.
+  The check reports outdated packages based on your local Homebrew metadata.
 - **Credentials**: The application never reads or displays private tokens or credentials from configuration files.
 
 ## AI Development Disclaimer
 
-This project was built with the assistance of artificial intelligence (AI) coding agents working in pair-programming workflows.
+This project was built with the assistance of artificial intelligence (AI) coding agents working in pair-programming
+workflows.
 
-Every line of code, architecture decision, security boundary, and test case was reviewed, verified, and tested by human engineers. All quality gates (`go vet`, unit tests with race detection, `golangci-lint`, and `govulncheck`) pass with zero issues.
+Every line of code, architecture decision, security boundary, and test case was reviewed, verified, and tested by human
+engineers. All quality gates (`go vet`, unit tests with race detection, `golangci-lint`, and `govulncheck`) pass with
+zero issues.
 
 ## License
 
@@ -173,6 +192,8 @@ This software is released under the **MIT Non-Commercial License (MIT-NC)**.
 
 Copyright (c) 2026 Devvara Rishivian.
 
-You may use, copy, modify, and distribute this software for non-commercial purposes. You must include the author's name and copyright notice in all copies or substantial portions of the software. Commercial use is prohibited without prior written permission from the copyright holder.
+You may use, copy, modify, and distribute this software for non-commercial purposes. You must include the author's name
+and copyright notice in all copies or substantial portions of the software. Commercial use is prohibited without prior
+written permission from the copyright holder.
 
 See the [LICENSE](LICENSE) file for complete terms.
