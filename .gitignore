@@ -462,3 +462,4 @@ modules.xml
 /workstation-doctor
 *.db
 .serena/
+dist/
