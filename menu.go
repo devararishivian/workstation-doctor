@@ -161,9 +161,9 @@ func (d *doctorApp) KeyMap() tui.KeyMap {
 		}
 	case "action_done":
 		return tui.KeyMap{
-			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.mode.Set("results") }),
-			tui.On(tui.KeyEnter, func(_ tui.KeyEvent) { d.mode.Set("results") }),
-			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.mode.Set("results") }),
+			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.returnFromActionDone() }),
+			tui.On(tui.KeyEnter, func(_ tui.KeyEvent) { d.returnFromActionDone() }),
+			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.returnFromActionDone() }),
 			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
 		}
 	case "history":

@@ -428,6 +428,14 @@ func historyDetail(record store.ActionRecord) Detail {
 		safeErr = record.Finish.SafeError
 	}
 
+	instDisplay := record.InstanceID
+	if len(instDisplay) > 28 && strings.Contains(instDisplay, ":") {
+		parts := strings.Split(instDisplay, ":")
+		if len(parts) == 2 && len(parts[1]) > 8 {
+			instDisplay = parts[0] + " (" + parts[1][:8] + ")"
+		}
+	}
+
 	detail := Detail{
 		Title: fmt.Sprintf("Action Record: %s (%s)", record.Label, record.ID),
 		Sections: []DetailSection{
@@ -437,7 +445,7 @@ func historyDetail(record store.ActionRecord) Detail {
 					{Label: "Action ID", Value: record.ID},
 					{Label: "Integration", Value: record.IntegrationID},
 					{Label: "Check", Value: record.CheckID},
-					{Label: "Instance", Value: record.InstanceID},
+					{Label: "Instance", Value: instDisplay},
 					{Label: "Kind", Value: record.Kind},
 					{Label: "Execution", Value: execStr},
 					{Label: "Verification", Value: verStr},

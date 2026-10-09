@@ -212,6 +212,7 @@ func (d *doctorApp) applyConfirmedAction() {
 		rep, applyErr := d.service.Apply(d.ctx, prep, approval)
 		d.queueUpdate(func() {
 			d.preparedAction = nil
+			d.statusMsg.Set("")
 			if applyErr != nil && rep.RecordID == "" {
 				d.statusMsg.Set("Action failed: " + applyErr.Error())
 				d.mode.Set("results")
@@ -223,6 +224,11 @@ func (d *doctorApp) applyConfirmedAction() {
 			d.mode.Set("action_done")
 		})
 	}()
+}
+
+func (d *doctorApp) returnFromActionDone() {
+	d.statusMsg.Set("")
+	d.startAudit()
 }
 
 func (d *doctorApp) prepareFirstAction() {
