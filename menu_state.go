@@ -200,8 +200,15 @@ func (d *doctorApp) applyConfirmedAction() {
 	prep := *d.preparedAction
 	approval, err := d.service.Confirm(prep)
 	if err != nil {
-		d.statusMsg.Set("Confirm failed: " + err.Error())
-		d.declinePreparedAction()
+		rep := app.ActionReport{
+			Execution:    store.ExecutionFailed,
+			Verification: store.VerificationNotPerformed,
+			SafeError:    "Confirmation failed: " + err.Error(),
+		}
+		d.actionReport = &rep
+		d.activeDetail.Set(actionReportText(rep))
+		d.scrollOffset.Set(0)
+		d.mode.Set("action_done")
 		return
 	}
 
@@ -214,9 +221,11 @@ func (d *doctorApp) applyConfirmedAction() {
 			d.preparedAction = nil
 			d.statusMsg.Set("")
 			if applyErr != nil && rep.RecordID == "" {
-				d.statusMsg.Set("Action failed: " + applyErr.Error())
-				d.mode.Set("results")
-				return
+				rep = app.ActionReport{
+					Execution:    store.ExecutionFailed,
+					Verification: store.VerificationNotPerformed,
+					SafeError:    applyErr.Error(),
+				}
 			}
 			d.actionReport = &rep
 			d.activeDetail.Set(actionReportText(rep))
@@ -233,21 +242,26 @@ func (d *doctorApp) returnFromActionDone() {
 
 func (d *doctorApp) prepareFirstAction() {
 	rep := d.report.Get()
-	idx := d.scrollOffset.Get()
-	if idx < 0 || idx >= len(rep.Findings) {
-		idx = 0
-	}
-	if len(rep.Findings) == 0 {
+	rows := buildDashboardRows(rep)
+	if len(rows) == 0 {
 		return
 	}
-	f := rep.Findings[idx]
-	for _, a := range f.Actions {
-		if a.Mode == doctor.ActionAutomatic {
-			d.prepareAction(f.Key, a.ID)
-			return
+	sel := d.selectedResult.Get()
+	if sel < 0 || sel >= len(rows) {
+		sel = 0
+	}
+	comp := rows[sel].Component
+	for _, f := range rep.Findings {
+		if f.Key.CheckID == comp {
+			for _, a := range f.Actions {
+				if a.Mode == doctor.ActionAutomatic {
+					d.prepareAction(f.Key, a.ID)
+					return
+				}
+			}
 		}
 	}
-	d.statusMsg.Set("No automatic maintenance action available for this finding")
+	d.statusMsg.Set("No automatic maintenance action available for " + comp)
 }
 
 func (d *doctorApp) loadHistory() {
@@ -301,7 +315,12 @@ func (d *doctorApp) applyMigration(confirmed bool) {
 	if err != nil {
 		d.statusMsg.Set("Migration failed: " + err.Error())
 		d.migrationPreview = nil
-		d.mode.Set("menu")
+		res = store.MigrationResult{
+			Imported:        0,
+			PreservedSource: prev.Source,
+		}
+		d.migrationResult = &res
+		d.mode.Set("migration_done")
 		return
 	}
 	d.migrationPreview = nil

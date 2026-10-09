@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -539,5 +541,60 @@ func TestHistoryAndDetail(t *testing.T) {
 	_, err = service.HistoryDetail(t.Context(), "non-existent")
 	if !errors.Is(err, errNotFound) {
 		t.Fatalf("expected errNotFound, got %v", err)
+	}
+}
+
+func TestApplyMultipleTimesSameActionDoesNotFailUniqueConstraint(t *testing.T) {
+	histDir := filepath.Join(t.TempDir(), "hist")
+	if err := os.MkdirAll(histDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	dbPath := filepath.Join(histDir, "history.db")
+	stateDir := t.TempDir()
+
+	service, key, _ := syntheticService(t, stateDir, new(atomic.Int32))
+	service.options.DBPath = dbPath
+	service.options.OpenHistory = func(ctx context.Context, path string, policy store.Policy) (History, error) {
+		return store.OpenHistory(ctx, path, policy)
+	}
+	service.options.RunStep = func(context.Context, doctor.CommandStep) (store.StepResult, error) {
+		exit0 := 0
+		now := time.Now().UTC()
+		return store.StepResult{Outcome: store.StepOutcomeCompleted, ExitCode: &exit0, StartedAt: now, FinishedAt: now.Add(time.Millisecond)}, nil
+	}
+
+	prep1, err := service.Prepare(t.Context(), key, "safe-update")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app1, err := service.Confirm(prep1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep1, err := service.Apply(t.Context(), prep1, app1)
+	if err != nil {
+		t.Fatalf("first Apply failed: %v", err)
+	}
+	if rep1.Execution != store.ExecutionCompleted {
+		t.Fatalf("first execution not completed: %v (safe error: %s)", rep1.Execution, rep1.SafeError)
+	}
+
+	prep2, err := service.Prepare(t.Context(), key, "safe-update")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app2, err := service.Confirm(prep2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep2, err := service.Apply(t.Context(), prep2, app2)
+	if err != nil {
+		t.Fatalf("second Apply failed with constraint error: %v", err)
+	}
+	if rep2.Execution != store.ExecutionCompleted {
+		t.Fatalf("second execution not completed: %v", rep2.Execution)
+	}
+	if rep1.RecordID == rep2.RecordID {
+		t.Fatalf("expected unique record IDs, got identical: %s", rep1.RecordID)
 	}
 }

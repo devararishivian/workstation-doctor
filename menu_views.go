@@ -1092,8 +1092,23 @@ func (d *doctorApp) renderDetail() *tui.Element {
 	root.AddChild(contentBox)
 	root.AddChild(hrLine())
 
+	navText := "[Esc / b: Back to Results · ↑/↓: Scroll · q: Quit]"
+	hasAutoFix := false
+	for _, sec := range det.Sections {
+		if sec.Heading == "Proposed Actions" {
+			for _, r := range sec.Rows {
+				if strings.Contains(r.Label, "[Automatic]") {
+					hasAutoFix = true
+					break
+				}
+			}
+		}
+	}
+	if hasAutoFix {
+		navText = "[Esc / b: Back to Results · 3 / p: Run Automatic Fix · 2: Manual Steps · ↑/↓: Scroll · q: Quit]"
+	}
 	nav := tui.New(
-		tui.WithText("[Esc / b: Back to Results · ↑/↓: Scroll · q: Quit]"),
+		tui.WithText(navText),
 		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
 	)
 	root.AddChild(nav)
@@ -1225,19 +1240,28 @@ func (d *doctorApp) renderPreviewAction() *tui.Element {
 }
 
 func (d *doctorApp) renderActionDone() *tui.Element {
+	borderStyle := catppuccinGreen
+	titleText := "Action Result & Verification"
+	if d.actionReport != nil {
+		if d.actionReport.Execution == store.ExecutionFailed || d.actionReport.Execution == store.ExecutionCanceled || d.actionReport.SafeError != "" {
+			borderStyle = catppuccinRed
+			titleText = "Action Execution Failed"
+		}
+	}
+
 	root := tui.New(
 		tui.WithDisplay(tui.DisplayFlex),
 		tui.WithDirection(tui.Column),
 		tui.WithBorder(tui.BorderRounded),
-		tui.WithBorderStyle(tui.NewStyle().Foreground(catppuccinGreen)),
+		tui.WithBorderStyle(tui.NewStyle().Foreground(borderStyle)),
 		tui.WithPadding(1),
 		tui.WithHeightPercent(100.0),
 		tui.WithWidthPercent(100.0),
 	)
 
 	title := tui.New(
-		tui.WithText("Action Result & Verification"),
-		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinGreen).Bold()),
+		tui.WithText(titleText),
+		tui.WithTextStyle(tui.NewStyle().Foreground(borderStyle).Bold()),
 	)
 	root.AddChild(title)
 	root.AddChild(hrLine())
@@ -1255,17 +1279,21 @@ func (d *doctorApp) renderActionDone() *tui.Element {
 			tui.WithDisplay(tui.DisplayFlex),
 			tui.WithDirection(tui.Column),
 			tui.WithBorder(tui.BorderRounded),
-			tui.WithBorderStyle(tui.NewStyle().Foreground(catppuccinGreen)),
+			tui.WithBorderStyle(tui.NewStyle().Foreground(borderStyle)),
 			tui.WithPadding(1),
 			tui.WithGap(0),
 		)
+		execStyle := tui.NewStyle().Foreground(catppuccinGreen).Bold()
+		if rep.Execution == store.ExecutionFailed || rep.Execution == store.ExecutionCanceled {
+			execStyle = tui.NewStyle().Foreground(catppuccinRed).Bold()
+		}
 		card.AddChild(tui.New(
 			tui.WithText(fmt.Sprintf("Execution:    %s", rep.Execution)),
-			tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinGreen).Bold()),
+			tui.WithTextStyle(execStyle),
 		))
 		card.AddChild(tui.New(
 			tui.WithText(fmt.Sprintf("Verification: %s", rep.Verification)),
-			tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinGreen).Bold()),
+			tui.WithTextStyle(tui.NewStyle().Bold()),
 		))
 		if rep.RecordID != "" {
 			card.AddChild(tui.New(
@@ -1275,14 +1303,14 @@ func (d *doctorApp) renderActionDone() *tui.Element {
 		}
 		if rep.SafeError != "" {
 			card.AddChild(tui.New(
-				tui.WithText(fmt.Sprintf("Error:        %s", rep.SafeError)),
-				tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinRed)),
+				tui.WithText(fmt.Sprintf("Error Details: %s", rep.SafeError)),
+				tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinRed).Bold()),
 			))
 		}
 		contentBox.AddChild(card)
 
 		contentBox.AddChild(tui.New(
-			tui.WithText("Press Enter or 'b' to re-run audit and return to the results dashboard."),
+			tui.WithText("Press Enter or 'b' to return to the results dashboard."),
 			tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
 		))
 	} else {

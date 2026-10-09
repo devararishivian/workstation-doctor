@@ -108,8 +108,13 @@ func (s *Service) Apply(ctx context.Context, prepared PreparedAction, approval A
 		scopeStr = "user"
 	}
 
+	attemptID := fmt.Sprintf("%s-%d", prepared.actionID, time.Now().UTC().UnixNano())
+	if len(attemptID) > 250 {
+		attemptID = attemptID[:250]
+	}
+
 	start := store.ActionStart{
-		ID:            prepared.actionID,
+		ID:            attemptID,
 		IntegrationID: prepared.key.IntegrationID,
 		CheckID:       prepared.key.CheckID,
 		InstanceID:    prepared.key.InstanceID,
