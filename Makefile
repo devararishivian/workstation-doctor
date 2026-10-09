@@ -45,5 +45,8 @@ run: build ## build and run (override with ARGS="check --db /tmp/x.db")
 clean: ## remove built binary and local database files
 	rm -f $(BINARY) *.db
 
+protect-branches: ## configure branch protection on GitHub (requires public repo)
+	./scripts/setup-branch-protection.sh
+
 install: ## install binary to GOPATH/bin
 	go install -ldflags "$(LDFLAGS)" .

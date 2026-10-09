@@ -1,5 +1,10 @@
 # workstation-doctor
 
+[![Latest Release](https://img.shields.io/github/v/release/devararishivian/workstation-doctor?color=blue)](https://github.com/devararishivian/workstation-doctor/releases)
+[![Go Version](https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go)](https://go.dev/)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](https://github.com/devararishivian/workstation-doctor)
+[![License](https://img.shields.io/badge/license-MIT--NC-orange)](LICENSE)
+
 `workstation-doctor` inspects developer tools on your computer and helps you maintain them safely through an interactive
 terminal user interface (TUI).
 
@@ -207,6 +212,13 @@ Every line of code, architecture decision, security boundary, and test case was 
 engineers. All quality gates (`go vet`, unit tests with race detection, `golangci-lint`, and `govulncheck`) pass with
 zero issues.
 
+## Community & Security
+
+- **Contributing**: Read [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines and testing commands.
+- **Code of Conduct**: This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md).
+- **Security Policy**: For responsible vulnerability reporting, read [SECURITY.md](SECURITY.md).
+- **Acknowledgements**: For third-party notices, read [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md).
+
 ## License
 
 This software is released under the **MIT Non-Commercial License (MIT-NC)**.
@@ -217,4 +229,4 @@ You may use, copy, modify, and distribute this software for non-commercial purpo
 and copyright notice in all copies or substantial portions of the software. Commercial use is prohibited without prior
 written permission from the copyright holder.
 
-See the [LICENSE](LICENSE) file for complete terms.
+See the [LICENSE](LICENSE) file for complete terms. Third-party notices are documented in [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md).
