@@ -504,6 +504,9 @@ func (d *doctorApp) renderManual() *tui.Element {
 	seen := map[string]bool{}
 
 	for _, f := range report.Findings {
+		if f.Outcome == doctor.OutcomeOK {
+			continue
+		}
 		for _, a := range f.Actions {
 			if a.Mode == doctor.ActionManual {
 				key := f.Key.CheckID + ":" + a.Label

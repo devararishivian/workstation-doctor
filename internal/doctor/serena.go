@@ -73,6 +73,7 @@ func checkSerenaInstance(ctx context.Context, host *Host, _ Scope, instance Inst
 		f.Outcome = OutcomeAttention
 	} else {
 		f.Outcome = OutcomeOK
+		f.Actions = nil
 	}
 	return []Finding{f}
 }

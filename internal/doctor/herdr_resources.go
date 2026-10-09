@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -264,7 +265,7 @@ func checkHerdrPluginSources(ctx context.Context, h *Host, _ Scope, i Instance) 
 		return []Finding{f}
 	}
 	f.Evidence = append(f.Evidence, Fact{State: EvidenceKnown, Label: "Managed checkout revision", Value: head, Source: "local Git HEAD", ObservedAt: hostNow(h)})
-	if len(status) > 0 {
+	if gitHasWorktreeChanges(status) {
 		f.Outcome = OutcomeAttention
 		f.Explanation = "The managed plugin checkout contains tracked or untracked changes; replacement is disabled."
 		f.Evidence = append(f.Evidence, Fact{State: EvidenceKnown, Label: "Checkout status", Value: "modified", Source: "bounded local Git status", ObservedAt: hostNow(h)})
@@ -339,6 +340,15 @@ func checkHerdrPluginSources(ctx context.Context, h *Host, _ Scope, i Instance) 
 		f.Actions = nil
 	}
 	return []Finding{f}
+}
+
+func gitHasWorktreeChanges(status []byte) bool {
+	for entry := range bytes.SplitSeq(status, []byte{0}) {
+		if len(entry) >= 2 && !bytes.HasPrefix(entry, []byte("!!")) {
+			return true
+		}
+	}
+	return false
 }
 
 func herdrPluginUpdateProposal(h *Host, src herdrPluginSource, id string, f Finding) ActionProposal {
@@ -490,7 +500,7 @@ func parseHerdrIntegrationStatus(output string) map[string]string {
 		}
 		name = strings.TrimSpace(name)
 		state = strings.ToLower(strings.TrimSpace(state))
-		if !publicGitComponent(name) || state == "" || len(state) > 256 {
+		if name == "" || len(name) > 256 || state == "" || len(state) > 256 {
 			return nil
 		}
 		normalized := ""

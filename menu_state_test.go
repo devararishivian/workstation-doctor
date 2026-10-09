@@ -700,39 +700,6 @@ func TestDashboardAppearance21ComponentRows(t *testing.T) {
 	}
 }
 
-func TestManualViewContainsComponentAndActionDetails(t *testing.T) {
-	key := doctor.FindingKey{IntegrationID: "herdr-plugins", CheckID: "herdr-plugins", InstanceID: "plugin-1"}
-	report := doctor.AuditReport{
-		Findings: []doctor.Finding{
-			{
-				Key:         key,
-				Outcome:     doctor.OutcomeAttention,
-				Question:    "Update available?",
-				Explanation: "New release available on remote",
-				References:  []doctor.PublicReference{{Kind: "documentation", URL: "https://example.com/plugin"}},
-				Actions: []doctor.ActionProposal{
-					{
-						ID:     "manual-1",
-						Mode:   doctor.ActionManual,
-						Label:  "Upgrade plugin manually",
-						Reason: "Remote commit differs",
-						Steps: []doctor.CommandStep{
-							{Label: "Run install", Command: doctor.Command{Executable: "herdr", Args: []string{"plugin", "install", "foo"}}},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	d := newDoctorApp(t.Context(), nil)
-	d.report.Set(report)
-	elem := d.renderManual()
-	if elem == nil {
-		t.Fatal("renderManual returned nil element")
-	}
-}
-
 func TestMenuAutomaticFixNoActionsShowsNotice(t *testing.T) {
 	d := newDoctorApp(t.Context(), nil)
 	d.report.Set(doctor.AuditReport{

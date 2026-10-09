@@ -70,6 +70,7 @@ func checkGithubTool(ctx context.Context, host *Host, instance Instance, id, rep
 	} else {
 		f.Outcome = OutcomeOK
 		f.Explanation = "The installed version is equal to or newer than the observed upstream release."
+		f.Actions = nil
 	}
 	return []Finding{f}
 }
