@@ -174,10 +174,26 @@ func (d *doctorApp) KeyMap() tui.KeyMap {
 			tui.On(tui.KeyEnter, func(_ tui.KeyEvent) { d.openSelectedHistoryDetail() }),
 			tui.On(tui.Rune('d'), func(_ tui.KeyEvent) { d.openSelectedHistoryDetail() }),
 			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
-			tui.On(tui.KeyDown, func(_ tui.KeyEvent) { d.scrollOffset.Update(func(v int) int { return v + 1 }) }),
-			tui.On(tui.Rune('j'), func(_ tui.KeyEvent) { d.scrollOffset.Update(func(v int) int { return v + 1 }) }),
+			tui.On(tui.KeyDown, func(_ tui.KeyEvent) {
+				d.selectedResult.Update(func(v int) int {
+					actions := d.historyActions.Get()
+					if v < len(actions)-1 {
+						return v + 1
+					}
+					return v
+				})
+			}),
+			tui.On(tui.Rune('j'), func(_ tui.KeyEvent) {
+				d.selectedResult.Update(func(v int) int {
+					actions := d.historyActions.Get()
+					if v < len(actions)-1 {
+						return v + 1
+					}
+					return v
+				})
+			}),
 			tui.On(tui.KeyUp, func(_ tui.KeyEvent) {
-				d.scrollOffset.Update(func(v int) int {
+				d.selectedResult.Update(func(v int) int {
 					if v > 0 {
 						return v - 1
 					}
@@ -185,7 +201,7 @@ func (d *doctorApp) KeyMap() tui.KeyMap {
 				})
 			}),
 			tui.On(tui.Rune('k'), func(_ tui.KeyEvent) {
-				d.scrollOffset.Update(func(v int) int {
+				d.selectedResult.Update(func(v int) int {
 					if v > 0 {
 						return v - 1
 					}

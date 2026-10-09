@@ -261,6 +261,7 @@ func (d *doctorApp) loadHistory() {
 		return
 	}
 	d.historyActions.Set(page.Items)
+	d.selectedResult.Set(0)
 	d.scrollOffset.Set(0)
 	d.mode.Set("history")
 }
@@ -314,7 +315,7 @@ func (d *doctorApp) openSelectedHistoryDetail() {
 	if len(actions) == 0 {
 		return
 	}
-	idx := d.scrollOffset.Get()
+	idx := d.selectedResult.Get()
 	if idx < 0 || idx >= len(actions) {
 		idx = 0
 	}

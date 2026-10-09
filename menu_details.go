@@ -35,7 +35,7 @@ func formatTime(t time.Time) string {
 	if t.IsZero() {
 		return "Installation time unavailable"
 	}
-	return t.UTC().Format(time.RFC3339)
+	return t.Local().Format("2006-01-02 15:04:05 MST")
 }
 
 // detailText renders a human-readable text representation of the detail model.

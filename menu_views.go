@@ -705,20 +705,16 @@ func (d *doctorApp) renderHistory() *tui.Element {
 		empty := tui.New(tui.WithText("No maintenance actions recorded yet."))
 		tableBox.AddChild(empty)
 	} else {
-		offset := d.scrollOffset.Get()
-		if offset > len(actions)-1 && len(actions) > 0 {
-			offset = len(actions) - 1
-		}
-		visible := actions
-		if offset > 0 && offset < len(actions) {
-			visible = actions[offset:]
-		}
-		maxDisplay := 20
-		if len(visible) > maxDisplay {
-			visible = visible[:maxDisplay]
-		}
+		currentSel := max(0, min(d.selectedResult.Get(), len(actions)-1))
 
-		currentSel := d.selectedResult.Get()
+		maxDisplay := 20
+		offset := 0
+		if currentSel >= maxDisplay {
+			offset = currentSel - maxDisplay + 1
+		}
+		end := min(offset+maxDisplay, len(actions))
+		visible := actions[offset:end]
+
 		for idx, a := range visible {
 			actualIdx := offset + idx
 			isSelected := actualIdx == currentSel
@@ -741,7 +737,7 @@ func (d *doctorApp) renderHistory() *tui.Element {
 				textStyle = tui.NewStyle().Foreground(catppuccinDim)
 			}
 
-			row.AddChild(tui.New(tui.WithWidth(22), tui.WithText(prefix+a.StartedAt.Format("2006-01-02 15:04:05")), tui.WithTextStyle(dateStyle)))
+			row.AddChild(tui.New(tui.WithWidth(22), tui.WithText(prefix+a.StartedAt.Local().Format("2006-01-02 15:04:05")), tui.WithTextStyle(dateStyle)))
 			row.AddChild(tui.New(tui.WithWidth(28), tui.WithText(trunc(a.ID, 26)), tui.WithTextStyle(textStyle)))
 
 			execStr := "Running"
