@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -41,7 +42,9 @@ type doctorApp struct {
 	activeDetail      *tui.State[string]
 	currentDetail     *tui.State[Detail]
 	preparedAction    *app.PreparedAction
+	preparedActions   []app.PreparedAction
 	actionReport      *app.ActionReport
+	batchReports      []app.ActionReport
 	historyActions    *tui.State[[]store.ActionRecord]
 	migrationPreview  *store.MigrationPreview
 	migrationResult   *store.MigrationResult
@@ -187,48 +190,63 @@ func (d *doctorApp) prepareAction(key doctor.FindingKey, actionID string) {
 
 func (d *doctorApp) declinePreparedAction() {
 	d.preparedAction = nil
+	d.preparedActions = nil
 	if d.mode.Get() == "preview_action" {
 		d.mode.Set("results")
 	}
 }
 
 func (d *doctorApp) applyConfirmedAction() {
-	if d.preparedAction == nil || d.service == nil {
-		d.declinePreparedAction()
-		return
+	preps := d.preparedActions
+	if len(preps) == 0 && d.preparedAction != nil {
+		preps = []app.PreparedAction{*d.preparedAction}
 	}
-	prep := *d.preparedAction
-	approval, err := d.service.Confirm(prep)
-	if err != nil {
-		rep := app.ActionReport{
-			Execution:    store.ExecutionFailed,
-			Verification: store.VerificationNotPerformed,
-			SafeError:    "Confirmation failed: " + err.Error(),
-		}
-		d.actionReport = &rep
-		d.activeDetail.Set(actionReportText(rep))
-		d.scrollOffset.Set(0)
-		d.mode.Set("action_done")
+	if len(preps) == 0 || d.service == nil {
+		d.declinePreparedAction()
 		return
 	}
 
 	d.mode.Set("fixing")
-	d.statusMsg.Set("Executing confirmed maintenance action...")
+	d.statusMsg.Set(fmt.Sprintf("Executing maintenance actions (0/%d completed)...", len(preps)))
 
 	go func() {
-		rep, applyErr := d.service.Apply(d.ctx, prep, approval)
-		d.queueUpdate(func() {
-			d.preparedAction = nil
-			d.statusMsg.Set("")
+		var reports []app.ActionReport
+		for i, prep := range preps {
+			d.queueUpdate(func() {
+				d.statusMsg.Set(fmt.Sprintf("Executing maintenance action %d/%d: %s...", i+1, len(preps), prep.Preview().Label))
+			})
+			approval, err := d.service.Confirm(prep)
+			if err != nil {
+				reports = append(reports, app.ActionReport{
+					Execution:    store.ExecutionFailed,
+					Verification: store.VerificationNotPerformed,
+					SafeError:    fmt.Sprintf("Confirmation failed for %s: %v", prep.Preview().Label, err),
+				})
+				continue
+			}
+			rep, applyErr := d.service.Apply(d.ctx, prep, approval)
 			if applyErr != nil && rep.RecordID == "" {
 				rep = app.ActionReport{
 					Execution:    store.ExecutionFailed,
 					Verification: store.VerificationNotPerformed,
-					SafeError:    applyErr.Error(),
+					SafeError:    fmt.Sprintf("%s: %v", prep.Preview().Label, applyErr),
 				}
 			}
-			d.actionReport = &rep
-			d.activeDetail.Set(actionReportText(rep))
+			reports = append(reports, rep)
+		}
+
+		d.queueUpdate(func() {
+			d.preparedAction = nil
+			d.preparedActions = nil
+			d.statusMsg.Set("")
+			d.batchReports = reports
+			if len(reports) == 1 {
+				d.actionReport = &reports[0]
+				d.activeDetail.Set(actionReportText(reports[0]))
+			} else {
+				d.actionReport = nil
+				d.activeDetail.Set("")
+			}
 			d.scrollOffset.Set(0)
 			d.mode.Set("action_done")
 		})
@@ -236,8 +254,60 @@ func (d *doctorApp) applyConfirmedAction() {
 }
 
 func (d *doctorApp) returnFromActionDone() {
+	d.preparedAction = nil
+	d.preparedActions = nil
+	d.actionReport = nil
+	d.batchReports = nil
 	d.statusMsg.Set("")
 	d.startAudit()
+}
+
+func (d *doctorApp) prepareAutomaticFixes(filterComponent string) {
+	rep := d.report.Get()
+	var preps []app.PreparedAction
+
+	for _, f := range rep.Findings {
+		if filterComponent != "" && f.Key.CheckID != filterComponent {
+			continue
+		}
+		for _, a := range f.Actions {
+			if a.Mode == doctor.ActionAutomatic {
+				if d.service == nil {
+					d.statusMsg.Set("Service unavailable")
+					return
+				}
+				prep, err := d.service.Prepare(d.ctx, f.Key, a.ID)
+				if err != nil {
+					continue
+				}
+				preps = append(preps, prep)
+			}
+		}
+	}
+
+	if len(preps) == 0 {
+		if filterComponent != "" {
+			d.statusMsg.Set("No automatic maintenance action available for " + filterComponent)
+		} else {
+			d.statusMsg.Set("No actions needed. All components are current.")
+		}
+		d.mode.Set("no_fixes")
+		return
+	}
+
+	d.preparedActions = preps
+	if len(preps) == 1 {
+		d.preparedAction = &preps[0]
+		det := actionDetail(preps[0].Preview())
+		d.currentDetail.Set(det)
+		d.activeDetail.Set(detailText(det))
+	} else {
+		d.preparedAction = nil
+		d.currentDetail.Set(Detail{})
+		d.activeDetail.Set("")
+	}
+	d.scrollOffset.Set(0)
+	d.mode.Set("preview_action")
 }
 
 func (d *doctorApp) prepareFirstAction() {
@@ -251,17 +321,7 @@ func (d *doctorApp) prepareFirstAction() {
 		sel = 0
 	}
 	comp := rows[sel].Component
-	for _, f := range rep.Findings {
-		if f.Key.CheckID == comp {
-			for _, a := range f.Actions {
-				if a.Mode == doctor.ActionAutomatic {
-					d.prepareAction(f.Key, a.ID)
-					return
-				}
-			}
-		}
-	}
-	d.statusMsg.Set("No automatic maintenance action available for " + comp)
+	d.prepareAutomaticFixes(comp)
 }
 
 func (d *doctorApp) loadHistory() {
@@ -342,17 +402,7 @@ func (d *doctorApp) openSelectedHistoryDetail() {
 }
 
 func (d *doctorApp) triggerAutomaticFix() {
-	rep := d.report.Get()
-	for _, f := range rep.Findings {
-		for _, a := range f.Actions {
-			if a.Mode == doctor.ActionAutomatic {
-				d.prepareAction(f.Key, a.ID)
-				return
-			}
-		}
-	}
-	d.statusMsg.Set("No actions needed. All components are current.")
-	d.mode.Set("no_fixes")
+	d.prepareAutomaticFixes("")
 }
 
 func (d *doctorApp) stop() {

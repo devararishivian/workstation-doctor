@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/devararishivian/workstation-doctor/internal/app"
 	"github.com/devararishivian/workstation-doctor/internal/doctor"
 	"github.com/devararishivian/workstation-doctor/internal/store"
 
@@ -625,7 +626,30 @@ func (d *doctorApp) renderManual() *tui.Element {
 		)
 		contentBox.AddChild(msg)
 	} else {
-		for i, item := range items {
+		offset := d.scrollOffset.Get()
+		if offset > len(items)-1 && len(items) > 0 {
+			offset = len(items) - 1
+		}
+		if offset < 0 {
+			offset = 0
+		}
+		maxCards := 2
+		visible := items[offset:]
+		if len(visible) > maxCards {
+			visible = visible[:maxCards]
+		}
+
+		if len(items) > maxCards {
+			progBox := tui.New(
+				tui.WithText(fmt.Sprintf("Showing steps %d–%d of %d  ·  Use [↑ / ↓] or [j / k] to scroll through all steps",
+					offset+1, offset+len(visible), len(items))),
+				tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow).Bold()),
+			)
+			contentBox.AddChild(progBox)
+		}
+
+		for i, item := range visible {
+			globalIdx := offset + i + 1
 			stepCard := tui.New(
 				tui.WithDisplay(tui.DisplayFlex),
 				tui.WithDirection(tui.Column),
@@ -635,7 +659,7 @@ func (d *doctorApp) renderManual() *tui.Element {
 				tui.WithGap(0),
 			)
 			stepCard.AddChild(tui.New(
-				tui.WithText(fmt.Sprintf("Step %d · [%s] %s", i+1, item.Component, item.Title)),
+				tui.WithText(fmt.Sprintf("Step %d of %d · [%s] %s", globalIdx, len(items), item.Component, item.Title)),
 				tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinMauve).Bold()),
 			))
 			if item.Reason != "" && item.Reason != item.Title {
@@ -673,8 +697,13 @@ func (d *doctorApp) renderManual() *tui.Element {
 
 	root.AddChild(hrLine())
 
+	navText := "[Esc / Enter / b: Back to Menu · 3: Run Automatic Fix · q: Quit]"
+	if len(items) > 2 {
+		offset := d.scrollOffset.Get()
+		navText = fmt.Sprintf("[Esc / Enter / b: Back to Menu · 3: Run Automatic Fix · ↑/↓ / j/k: Scroll (Step %d of %d) · q: Quit]", offset+1, len(items))
+	}
 	nav := tui.New(
-		tui.WithText("[Esc / Enter / b: Back to Menu · 3: Run Automatic Fix · q: Quit]"),
+		tui.WithText(navText),
 		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
 	)
 	root.AddChild(nav)
@@ -1003,7 +1032,26 @@ func (d *doctorApp) renderDetail() *tui.Element {
 					tui.WithText("[!] Items Requiring Attention"),
 					tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow).Bold()),
 				))
-				for _, row := range sec.Rows {
+				rows := sec.Rows
+				if len(rows) > 4 {
+					offset := d.scrollOffset.Get()
+					if offset > len(rows)-1 && len(rows) > 0 {
+						offset = len(rows) - 1
+					}
+					if offset < 0 {
+						offset = 0
+					}
+					visible := rows[offset:]
+					if len(visible) > 4 {
+						visible = visible[:4]
+					}
+					attnBox.AddChild(tui.New(
+						tui.WithText(fmt.Sprintf("  (Showing %d–%d of %d · Use ↑/↓ to scroll)", offset+1, offset+len(visible), len(rows))),
+						tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow)),
+					))
+					rows = visible
+				}
+				for _, row := range rows {
 					itemRow := tui.New(
 						tui.WithDisplay(tui.DisplayFlex),
 						tui.WithDirection(tui.Column),
@@ -1034,7 +1082,26 @@ func (d *doctorApp) renderDetail() *tui.Element {
 					tui.WithText("[Action] Proposed Actions"),
 					tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinGreen).Bold()),
 				))
-				for _, row := range sec.Rows {
+				pRows := sec.Rows
+				if len(pRows) > 4 {
+					offset := d.scrollOffset.Get()
+					if offset > len(pRows)-1 && len(pRows) > 0 {
+						offset = len(pRows) - 1
+					}
+					if offset < 0 {
+						offset = 0
+					}
+					visible := pRows[offset:]
+					if len(visible) > 4 {
+						visible = visible[:4]
+					}
+					actBox.AddChild(tui.New(
+						tui.WithText(fmt.Sprintf("  (Showing %d–%d of %d · Use ↑/↓ to scroll)", offset+1, offset+len(visible), len(pRows))),
+						tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow)),
+					))
+					pRows = visible
+				}
+				for _, row := range pRows {
 					itemRow := tui.New(
 						tui.WithDisplay(tui.DisplayFlex),
 						tui.WithDirection(tui.Column),
@@ -1062,7 +1129,26 @@ func (d *doctorApp) renderDetail() *tui.Element {
 					tui.WithText(sec.Heading),
 					tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinMauve).Bold()),
 				))
-				for _, row := range sec.Rows {
+				dRows := sec.Rows
+				if len(dRows) > 8 {
+					offset := d.scrollOffset.Get()
+					if offset > len(dRows)-1 && len(dRows) > 0 {
+						offset = len(dRows) - 1
+					}
+					if offset < 0 {
+						offset = 0
+					}
+					visible := dRows[offset:]
+					if len(visible) > 8 {
+						visible = visible[:8]
+					}
+					secBox.AddChild(tui.New(
+						tui.WithText(fmt.Sprintf("  (Showing %d–%d of %d · Use ↑/↓ to scroll)", offset+1, offset+len(visible), len(dRows))),
+						tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow)),
+					))
+					dRows = visible
+				}
+				for _, row := range dRows {
 					rElem := tui.New(
 						tui.WithDisplay(tui.DisplayFlex),
 						tui.WithDirection(tui.Row),
@@ -1141,8 +1227,142 @@ func (d *doctorApp) renderPreviewAction() *tui.Element {
 		tui.WithFlexGrow(1.0),
 	)
 
-	if d.preparedAction != nil {
-		p := d.preparedAction.Preview()
+	preps := d.preparedActions
+	if len(preps) == 0 && d.preparedAction != nil {
+		preps = []app.PreparedAction{*d.preparedAction}
+	}
+
+	switch {
+	case len(preps) > 1:
+		compCounts := map[string]int{}
+		var compOrder []string
+		for _, prep := range preps {
+			cid := prep.Preview().CheckID
+			if compCounts[cid] == 0 {
+				compOrder = append(compOrder, cid)
+			}
+			compCounts[cid]++
+		}
+		var compSummaries []string
+		for _, cid := range compOrder {
+			compSummaries = append(compSummaries, fmt.Sprintf("%s (%d)", cid, compCounts[cid]))
+		}
+
+		infoCard := tui.New(
+			tui.WithDisplay(tui.DisplayFlex),
+			tui.WithDirection(tui.Column),
+			tui.WithBorder(tui.BorderRounded),
+			tui.WithBorderStyle(tui.NewStyle().Foreground(catppuccinBlue)),
+			tui.WithPadding(1),
+			tui.WithGap(0),
+		)
+		infoCard.AddChild(tui.New(
+			tui.WithText(fmt.Sprintf("Action: Batch Maintenance Fix (%d actions)", len(preps))),
+			tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinMauve).Bold()),
+		))
+		infoCard.AddChild(tui.New(
+			tui.WithText("Components: "+strings.Join(compSummaries, ", ")),
+			tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+		))
+		infoCard.AddChild(tui.New(
+			tui.WithText("Reason: Apply all available automatic maintenance updates across components"),
+			tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+		))
+		contentBox.AddChild(infoCard)
+
+		type batchStepItem struct {
+			Component string
+			Label     string
+		}
+		var allSteps []batchStepItem
+		for _, prep := range preps {
+			p := prep.Preview()
+			for _, st := range p.Steps {
+				allSteps = append(allSteps, batchStepItem{
+					Component: p.CheckID,
+					Label:     st.Label,
+				})
+			}
+		}
+
+		if len(allSteps) > 0 {
+			stepsCard := tui.New(
+				tui.WithDisplay(tui.DisplayFlex),
+				tui.WithDirection(tui.Column),
+				tui.WithBorder(tui.BorderRounded),
+				tui.WithBorderStyle(tui.NewStyle().Foreground(catppuccinGreen)),
+				tui.WithPadding(1),
+				tui.WithGap(0),
+			)
+			stepsCard.AddChild(tui.New(
+				tui.WithText(fmt.Sprintf("Planned Steps (%d total):", len(allSteps))),
+				tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinGreen).Bold()),
+			))
+
+			offset := d.scrollOffset.Get()
+			if offset > len(allSteps)-1 && len(allSteps) > 0 {
+				offset = len(allSteps) - 1
+			}
+			if offset < 0 {
+				offset = 0
+			}
+			maxDisplaySteps := 5
+			visibleSteps := allSteps[offset:]
+			if len(visibleSteps) > maxDisplaySteps {
+				visibleSteps = visibleSteps[:maxDisplaySteps]
+			}
+
+			if len(allSteps) > maxDisplaySteps {
+				stepsCard.AddChild(tui.New(
+					tui.WithText(fmt.Sprintf("  (Showing %d–%d of %d steps · Use ↑/↓ to scroll)",
+						offset+1, offset+len(visibleSteps), len(allSteps))),
+					tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow)),
+				))
+			}
+
+			for i, s := range visibleSteps {
+				stepsCard.AddChild(tui.New(
+					tui.WithText(fmt.Sprintf("  %d. [%s] %s", offset+i+1, s.Component, s.Label)),
+					tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinGreen)),
+				))
+			}
+			contentBox.AddChild(stepsCard)
+		}
+
+		seenEff := map[string]bool{}
+		var allEff []string
+		for _, prep := range preps {
+			for _, eff := range prep.Preview().SideEffects {
+				if !seenEff[eff] {
+					seenEff[eff] = true
+					allEff = append(allEff, eff)
+				}
+			}
+		}
+
+		if len(allEff) > 0 {
+			effCard := tui.New(
+				tui.WithDisplay(tui.DisplayFlex),
+				tui.WithDirection(tui.Column),
+				tui.WithBorder(tui.BorderRounded),
+				tui.WithBorderStyle(tui.NewStyle().Foreground(catppuccinYellow)),
+				tui.WithPadding(1),
+				tui.WithGap(0),
+			)
+			effCard.AddChild(tui.New(
+				tui.WithText("Side Effects & Permissions:"),
+				tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow).Bold()),
+			))
+			for _, eff := range allEff {
+				effCard.AddChild(tui.New(
+					tui.WithText("  • "+eff),
+					tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+				))
+			}
+			contentBox.AddChild(effCard)
+		}
+	case len(preps) == 1:
+		p := preps[0].Preview()
 		var cleanTargets []string
 		for _, tid := range p.TargetIDs {
 			if len(tid) > 20 && strings.Contains(tid, ":") {
@@ -1193,8 +1413,12 @@ func (d *doctorApp) renderPreviewAction() *tui.Element {
 				tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinGreen).Bold()),
 			))
 			for i, s := range p.Steps {
+				desc := s.Label
+				if s.Description != "" && s.Description != s.Label {
+					desc = fmt.Sprintf("%s: %s", s.Label, s.Description)
+				}
 				stepsCard.AddChild(tui.New(
-					tui.WithText(fmt.Sprintf("  %d. %s: %s", i+1, s.Label, s.Description)),
+					tui.WithText(fmt.Sprintf("  %d. %s", i+1, desc)),
 				))
 			}
 			contentBox.AddChild(stepsCard)
@@ -1221,7 +1445,7 @@ func (d *doctorApp) renderPreviewAction() *tui.Element {
 			}
 			contentBox.AddChild(effCard)
 		}
-	} else {
+	default:
 		text := d.activeDetail.Get()
 		for line := range strings.SplitSeq(text, "\n") {
 			contentBox.AddChild(tui.New(tui.WithText(line)))
@@ -1230,8 +1454,12 @@ func (d *doctorApp) renderPreviewAction() *tui.Element {
 	root.AddChild(contentBox)
 	root.AddChild(hrLine())
 
+	promptText := "[?] Execute this action? [Press 'y' to confirm · Press 'n' / Esc / any other key to decline]"
+	if len(preps) > 1 {
+		promptText = fmt.Sprintf("[?] Execute all %d actions? [Press 'y' to confirm · Press 'n' / Esc to decline · ↑/↓: Scroll]", len(preps))
+	}
 	prompt := tui.New(
-		tui.WithText("[?] Execute this action? [Press 'y' to confirm · Press 'n' / Esc / any other key to decline]"),
+		tui.WithText(promptText),
 		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow).Bold()),
 	)
 	root.AddChild(prompt)
@@ -1242,7 +1470,21 @@ func (d *doctorApp) renderPreviewAction() *tui.Element {
 func (d *doctorApp) renderActionDone() *tui.Element {
 	borderStyle := catppuccinGreen
 	titleText := "Action Result & Verification"
-	if d.actionReport != nil {
+	nSuccess := 0
+	nFailed := 0
+	if len(d.batchReports) > 0 {
+		for _, r := range d.batchReports {
+			if r.Execution == store.ExecutionCompleted {
+				nSuccess++
+			} else {
+				nFailed++
+			}
+		}
+		if nFailed > 0 {
+			borderStyle = catppuccinRed
+			titleText = "Action Execution Incomplete"
+		}
+	} else if d.actionReport != nil {
 		if d.actionReport.Execution == store.ExecutionFailed || d.actionReport.Execution == store.ExecutionCanceled || d.actionReport.SafeError != "" {
 			borderStyle = catppuccinRed
 			titleText = "Action Execution Failed"
@@ -1273,7 +1515,72 @@ func (d *doctorApp) renderActionDone() *tui.Element {
 		tui.WithFlexGrow(1.0),
 	)
 
-	if d.actionReport != nil {
+	switch {
+	case len(d.batchReports) > 0:
+		card := tui.New(
+			tui.WithDisplay(tui.DisplayFlex),
+			tui.WithDirection(tui.Column),
+			tui.WithBorder(tui.BorderRounded),
+			tui.WithBorderStyle(tui.NewStyle().Foreground(borderStyle)),
+			tui.WithPadding(1),
+			tui.WithGap(0),
+		)
+		card.AddChild(tui.New(
+			tui.WithText(fmt.Sprintf("Summary: %d / %d actions executed successfully", nSuccess, len(d.batchReports))),
+			tui.WithTextStyle(tui.NewStyle().Bold().Foreground(borderStyle)),
+		))
+
+		offset := d.scrollOffset.Get()
+		if offset > len(d.batchReports)-1 && len(d.batchReports) > 0 {
+			offset = len(d.batchReports) - 1
+		}
+		if offset < 0 {
+			offset = 0
+		}
+		maxDisplayReps := 5
+		visibleReps := d.batchReports[offset:]
+		if len(visibleReps) > maxDisplayReps {
+			visibleReps = visibleReps[:maxDisplayReps]
+		}
+
+		if len(d.batchReports) > maxDisplayReps {
+			card.AddChild(tui.New(
+				tui.WithText(fmt.Sprintf("  (Showing %d–%d of %d · Use ↑/↓ to scroll)",
+					offset+1, offset+len(visibleReps), len(d.batchReports))),
+				tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow)),
+			))
+		}
+
+		for i, rep := range visibleReps {
+			idx := offset + i + 1
+			mark := "✓"
+			color := catppuccinGreen
+			if rep.Execution != store.ExecutionCompleted {
+				mark = "✗"
+				color = catppuccinRed
+			}
+			recText := rep.RecordID
+			if recText == "" {
+				recText = fmt.Sprintf("Action %d", idx)
+			}
+			card.AddChild(tui.New(
+				tui.WithText(fmt.Sprintf("  %s %s: Execution %s · Verification %s", mark, recText, rep.Execution, rep.Verification)),
+				tui.WithTextStyle(tui.NewStyle().Foreground(color)),
+			))
+			if rep.SafeError != "" {
+				card.AddChild(tui.New(
+					tui.WithText(fmt.Sprintf("    Error: %s", rep.SafeError)),
+					tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinRed)),
+				))
+			}
+		}
+		contentBox.AddChild(card)
+
+		contentBox.AddChild(tui.New(
+			tui.WithText("Press Enter or 'b' to re-run audit and return to the results dashboard."),
+			tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+		))
+	case d.actionReport != nil:
 		rep := *d.actionReport
 		card := tui.New(
 			tui.WithDisplay(tui.DisplayFlex),
@@ -1313,7 +1620,7 @@ func (d *doctorApp) renderActionDone() *tui.Element {
 			tui.WithText("Press Enter or 'b' to return to the results dashboard."),
 			tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
 		))
-	} else {
+	default:
 		text := d.activeDetail.Get()
 		for line := range strings.SplitSeq(text, "\n") {
 			contentBox.AddChild(tui.New(tui.WithText(line)))
@@ -1323,7 +1630,7 @@ func (d *doctorApp) renderActionDone() *tui.Element {
 	root.AddChild(hrLine())
 
 	nav := tui.New(
-		tui.WithText("[Esc / Enter / b: Re-audit & Return to Results · q: Quit]"),
+		tui.WithText("[Esc / Enter / b: Re-audit & Return to Results · ↑/↓: Scroll · q: Quit]"),
 		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
 	)
 	root.AddChild(nav)

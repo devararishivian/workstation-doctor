@@ -175,6 +175,104 @@ func inspectGitResource(ctx context.Context, h *Host, _ Instance, r ResourceSour
 	if len(parts) != 3 || parts[0] != "github.com" || h.Fetch == nil {
 		return f
 	}
+
+	// First, check if the repository publishes semver releases or tags.
+	var localTag string
+	if desc, descErr := run("describe", "--tags", "--abbrev=0", "HEAD"); descErr == nil && desc.ExitCode == 0 && !desc.Truncated {
+		t := strings.TrimSpace(string(desc.Stdout))
+		if validText(t, 64) && t != "" {
+			localTag = t
+		}
+	}
+	if localTag == "" {
+		if pt, ptErr := run("tag", "--points-at", "HEAD"); ptErr == nil && pt.ExitCode == 0 && !pt.Truncated {
+			lines := strings.Split(strings.TrimSpace(string(pt.Stdout)), "\n")
+			if len(lines) > 0 && validText(lines[0], 64) && lines[0] != "" {
+				localTag = strings.TrimSpace(lines[0])
+			}
+		}
+	}
+
+	if localTag != "" {
+		var remoteTag string
+		var releasePageURL string
+		relRaw, relErr := h.Fetch(ctx, "https://api.github.com/repos/"+url.PathEscape(parts[1])+"/"+url.PathEscape(parts[2])+"/releases/latest")
+		if relErr == nil && len(relRaw) <= int(DefaultLimits().MaxHTTPBytes) {
+			var release struct {
+				TagName string `json:"tag_name"`
+				HTMLURL string `json:"html_url"`
+			}
+			if json.Unmarshal(relRaw, &release) == nil && validText(release.TagName, 64) && release.TagName != "" {
+				remoteTag = release.TagName
+				releasePageURL = release.HTMLURL
+			}
+		}
+		if remoteTag == "" {
+			tagsRaw, tagsErr := h.Fetch(ctx, "https://api.github.com/repos/"+url.PathEscape(parts[1])+"/"+url.PathEscape(parts[2])+"/tags")
+			if tagsErr == nil && len(tagsRaw) <= int(DefaultLimits().MaxHTTPBytes) {
+				var tagList []struct {
+					Name string `json:"name"`
+				}
+				if json.Unmarshal(tagsRaw, &tagList) == nil && len(tagList) > 0 && validText(tagList[0].Name, 64) && tagList[0].Name != "" {
+					remoteTag = tagList[0].Name
+					releasePageURL = "https://github.com/" + parts[1] + "/" + parts[2] + "/releases/tag/" + remoteTag
+				}
+			}
+		}
+
+		if remoteTag != "" {
+			order, cmpErr := CompareVersions(localTag, remoteTag, "semver")
+			if cmpErr == nil {
+				if order < 0 {
+					f.Outcome = OutcomeAttention
+					f.Explanation = fmt.Sprintf("A newer upstream release (%s) is available for %s (installed: %s).", remoteTag, filepath.Base(r.Identity), localTag)
+					f.Evidence = append(f.Evidence,
+						Fact{State: EvidenceKnown, Label: "Installed version", Value: localTag, Source: "local Git tag", ObservedAt: hostNow(h)},
+						Fact{State: EvidenceKnown, Label: "Upstream release", Value: remoteTag, Source: "public GitHub release", ObservedAt: hostNow(h)},
+					)
+					if releasePageURL != "" {
+						f.References = append(f.References, PublicReference{Kind: "release", Label: "GitHub release", URL: releasePageURL})
+					}
+					if piExe, ok := findExecutable(h, "pi"); ok && r.Manager == "pi" {
+						f.Actions = []ActionProposal{
+							{
+								ID:                  "update-pi-git-" + sanitizeActionID(r.Identity),
+								Key:                 f.Key,
+								Mode:                ActionAutomatic,
+								Label:               fmt.Sprintf("Update %s to %s", filepath.Base(r.Identity), remoteTag),
+								Reason:              fmt.Sprintf("Git package %s is outdated (%s -> %s)", filepath.Base(r.Identity), localTag, remoteTag),
+								TargetIDs:           []string{r.Identity},
+								TargetVersion:       Fact{State: EvidenceKnown, Label: "Target version", Value: remoteTag},
+								Preconditions:       []Fact{{State: EvidenceKnown, Label: "Installed version", Value: localTag}},
+								VerificationCheckID: f.Key.CheckID,
+								Steps: []CommandStep{
+									{
+										Label: fmt.Sprintf("Run pi install git:%s", r.Identity),
+										Command: Command{
+											Executable: piExe,
+											Args:       []string{"install", "git:" + r.Identity},
+										},
+									},
+								},
+								SideEffects: []string{
+									"Updates the git package repository and reinstalls into Pi settings.",
+								},
+							},
+						}
+					}
+					return f
+				}
+				f.Outcome = OutcomeOK
+				f.Explanation = fmt.Sprintf("Installed release %s matches or exceeds upstream release (%s).", localTag, remoteTag)
+				f.Evidence = append(f.Evidence,
+					Fact{State: EvidenceKnown, Label: "Installed version", Value: localTag, Source: "local Git tag", ObservedAt: hostNow(h)},
+					Fact{State: EvidenceKnown, Label: "Upstream release", Value: remoteTag, Source: "public GitHub release", ObservedAt: hostNow(h)},
+				)
+				return f
+			}
+		}
+	}
+
 	remote, e := h.Fetch(ctx, "https://api.github.com/repos/"+parts[1]+"/"+parts[2]+"/commits/"+url.PathEscape(targetRef))
 	if e != nil || len(remote) > int(DefaultLimits().MaxHTTPBytes) {
 		f.Explanation = "Remote lookup is unavailable. Local revision evidence is retained."

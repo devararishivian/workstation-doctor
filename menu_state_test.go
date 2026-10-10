@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -833,5 +834,190 @@ func TestMenuAutomaticFixWithActionPreparesPreview(t *testing.T) {
 	}
 	if d.preparedAction == nil {
 		t.Fatal("expected non-nil preparedAction")
+	}
+}
+
+func TestMenuBatchAutomaticFixMultipleComponents(t *testing.T) {
+	keyPi1 := doctor.FindingKey{IntegrationID: "pi-packages", CheckID: "pi-packages", InstanceID: "pkg-1"}
+	keyPi2 := doctor.FindingKey{IntegrationID: "pi-packages", CheckID: "pi-packages", InstanceID: "pkg-2"}
+	keyHerdr := doctor.FindingKey{IntegrationID: "herdr-plugins", CheckID: "herdr-plugins", InstanceID: "plugin-1"}
+
+	propPi1 := doctor.ActionProposal{
+		ID: "update-pkg-1", Key: keyPi1, Mode: doctor.ActionAutomatic,
+		Label: "Update pkg-1", Reason: "Outdated pkg-1", TargetIDs: []string{"pkg-1"},
+		TargetVersion:       doctor.Fact{State: doctor.EvidenceKnown, Value: "2.0"},
+		Steps:               []doctor.CommandStep{{Label: "Run pi install pkg-1", Command: doctor.Command{Executable: "/usr/bin/true", Dir: "/tmp"}}},
+		Preconditions:       []doctor.Fact{{State: doctor.EvidenceKnown, Label: "installed", Value: "1.0"}},
+		VerificationCheckID: "pi-packages",
+	}
+	propPi2 := doctor.ActionProposal{
+		ID: "update-pkg-2", Key: keyPi2, Mode: doctor.ActionAutomatic,
+		Label: "Update pkg-2", Reason: "Outdated pkg-2", TargetIDs: []string{"pkg-2"},
+		TargetVersion:       doctor.Fact{State: doctor.EvidenceKnown, Value: "3.0"},
+		Steps:               []doctor.CommandStep{{Label: "Run pi install pkg-2", Command: doctor.Command{Executable: "/usr/bin/true", Dir: "/tmp"}}},
+		Preconditions:       []doctor.Fact{{State: doctor.EvidenceKnown, Label: "installed", Value: "1.0"}},
+		VerificationCheckID: "pi-packages",
+	}
+	propHerdr := doctor.ActionProposal{
+		ID: "update-plugin-1", Key: keyHerdr, Mode: doctor.ActionAutomatic,
+		Label: "Update plugin-1", Reason: "Outdated plugin-1", TargetIDs: []string{"plugin-1"},
+		TargetVersion:       doctor.Fact{State: doctor.EvidenceKnown, Value: "commit-2"},
+		Steps:               []doctor.CommandStep{{Label: "Run herdr install plugin-1", Command: doctor.Command{Executable: "/usr/bin/true", Dir: "/tmp"}}},
+		Preconditions:       []doctor.Fact{{State: doctor.EvidenceKnown, Label: "installed", Value: "commit-1"}},
+		VerificationCheckID: "herdr-plugins",
+	}
+
+	engine, err := doctor.NewAuditEngine([]doctor.Definition{
+		{
+			Integration: doctor.Integration{ID: "pi-packages", Name: "Pi Packages"},
+			Discover: func(context.Context, *doctor.Host, doctor.Scope) doctor.Discovery {
+				return doctor.Discovery{Availability: doctor.AvailabilityPresent, Instances: []doctor.Instance{
+					{ID: "pkg-1", IntegrationID: "pi-packages", Availability: doctor.AvailabilityPresent},
+					{ID: "pkg-2", IntegrationID: "pi-packages", Availability: doctor.AvailabilityPresent},
+				}}
+			},
+			Checks: []doctor.CheckDefinition{
+				{ID: "pi-packages", Name: "Pi", Question: "Pi?", Order: 1, Evaluate: func(_ context.Context, _ *doctor.Host, _ doctor.Scope, inst doctor.Instance) []doctor.Finding {
+					if inst.ID == "pkg-1" {
+						return []doctor.Finding{{Key: keyPi1, Outcome: doctor.OutcomeAttention, Actions: []doctor.ActionProposal{propPi1}}}
+					}
+					return []doctor.Finding{{Key: keyPi2, Outcome: doctor.OutcomeAttention, Actions: []doctor.ActionProposal{propPi2}}}
+				}},
+			},
+		},
+		{
+			Integration: doctor.Integration{ID: "herdr-plugins", Name: "Herdr Plugins"},
+			Discover: func(context.Context, *doctor.Host, doctor.Scope) doctor.Discovery {
+				return doctor.Discovery{Availability: doctor.AvailabilityPresent, Instances: []doctor.Instance{
+					{ID: "plugin-1", IntegrationID: "herdr-plugins", Availability: doctor.AvailabilityPresent},
+				}}
+			},
+			Checks: []doctor.CheckDefinition{
+				{ID: "herdr-plugins", Name: "Herdr", Question: "Herdr?", Order: 2, Evaluate: func(context.Context, *doctor.Host, doctor.Scope, doctor.Instance) []doctor.Finding {
+					return []doctor.Finding{{Key: keyHerdr, Outcome: doctor.OutcomeAttention, Actions: []doctor.ActionProposal{propHerdr}}}
+				}},
+			},
+		},
+	}, doctor.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hostBatch, err := doctor.NewHost(doctor.Scope{}, doctor.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	serviceBatch := app.NewService(engine, hostBatch, doctor.Scope{}, app.Options{
+		StateDir: t.TempDir(),
+		DBPath:   filepath.Join(t.TempDir(), "h", "history.db"),
+		Policy:   store.DefaultPolicy(),
+	})
+
+	d := newDoctorApp(t.Context(), serviceBatch)
+	d.report.Set(doctor.AuditReport{
+		Findings: []doctor.Finding{
+			{Key: keyPi1, Outcome: doctor.OutcomeAttention, Actions: []doctor.ActionProposal{propPi1}},
+			{Key: keyPi2, Outcome: doctor.OutcomeAttention, Actions: []doctor.ActionProposal{propPi2}},
+			{Key: keyHerdr, Outcome: doctor.OutcomeAttention, Actions: []doctor.ActionProposal{propHerdr}},
+		},
+	})
+
+	// 1. Global automatic fix should collect ALL 3 actions across both components
+	d.triggerAutomaticFix()
+	if d.mode.Get() != "preview_action" {
+		t.Fatalf("expected mode preview_action, got %q", d.mode.Get())
+	}
+	if len(d.preparedActions) != 3 {
+		t.Fatalf("expected 3 prepared actions, got %d", len(d.preparedActions))
+	}
+
+	elemPreview := d.renderPreviewAction()
+	if elemPreview == nil {
+		t.Fatal("renderPreviewAction returned nil for batch actions")
+	}
+
+	// 2. Component filter: only pi-packages
+	d.prepareAutomaticFixes("pi-packages")
+	if len(d.preparedActions) != 2 {
+		t.Fatalf("expected 2 pi-packages actions, got %d", len(d.preparedActions))
+	}
+
+	// 3. Component filter: only herdr-plugins
+	d.prepareAutomaticFixes("herdr-plugins")
+	if len(d.preparedActions) != 1 {
+		t.Fatalf("expected 1 herdr-plugins action, got %d", len(d.preparedActions))
+	}
+
+	// 4. Confirm batch execution of all 3 actions
+	d.triggerAutomaticFix()
+	if len(d.preparedActions) != 3 {
+		t.Fatalf("expected 3 prepared actions, got %d", len(d.preparedActions))
+	}
+	d.applyConfirmedAction()
+	// Wait for background execution to complete
+	deadline := time.Now().Add(2 * time.Second)
+	for d.mode.Get() != "action_done" && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if d.mode.Get() != "action_done" {
+		t.Fatalf("expected mode action_done after applyConfirmedAction, got %s", d.mode.Get())
+	}
+	if len(d.batchReports) != 3 {
+		t.Fatalf("expected 3 batch reports, got %d", len(d.batchReports))
+	}
+	elemDone := d.renderActionDone()
+	if elemDone == nil {
+		t.Fatal("renderActionDone returned nil for batch reports")
+	}
+
+	// 5. Returning from action_done cleans up state
+	d.returnFromActionDone()
+	if d.batchReports != nil {
+		t.Fatal("expected nil batchReports after returnFromActionDone")
+	}
+	if len(d.preparedActions) != 0 {
+		t.Fatal("expected empty preparedActions after returnFromActionDone")
+	}
+}
+
+func TestMenuManualStepsScrollAndWindowing(t *testing.T) {
+	d := newDoctorApp(t.Context(), nil)
+	var findings []doctor.Finding
+	for i := 1; i <= 6; i++ {
+		key := doctor.FindingKey{IntegrationID: "fixture", CheckID: fmt.Sprintf("check-%d", i), InstanceID: fmt.Sprintf("inst-%d", i)}
+		prop := doctor.ActionProposal{
+			ID:    fmt.Sprintf("fix-%d", i),
+			Key:   key,
+			Mode:  doctor.ActionManual,
+			Label: fmt.Sprintf("Fix step %d", i),
+			Steps: []doctor.CommandStep{{Label: fmt.Sprintf("run-cmd-%d", i), Command: doctor.Command{Executable: "/bin/echo", Args: []string{fmt.Sprint(i)}}}},
+		}
+		findings = append(findings, doctor.Finding{
+			Key:     key,
+			Outcome: doctor.OutcomeAttention,
+			Actions: []doctor.ActionProposal{prop},
+		})
+	}
+	d.report.Set(doctor.AuditReport{Findings: findings})
+
+	// Render page 1
+	d.scrollOffset.Set(0)
+	elem1 := d.renderManual()
+	if elem1 == nil {
+		t.Fatal("renderManual returned nil for page 1")
+	}
+
+	// Render page 2 (scrolled)
+	d.scrollOffset.Set(2)
+	elem2 := d.renderManual()
+	if elem2 == nil {
+		t.Fatal("renderManual returned nil for page 2")
+	}
+
+	// Beyond length clamps safely
+	d.scrollOffset.Set(999)
+	elemClamped := d.renderManual()
+	if elemClamped == nil {
+		t.Fatal("renderManual returned nil for clamped page")
 	}
 }

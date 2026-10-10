@@ -357,7 +357,22 @@ func herdrPluginUpdateProposal(h *Host, src herdrPluginSource, id string, f Find
 		target += "/" + src.Subdir
 	}
 	sideEffects := []string{"May replace the managed plugin checkout.", "Executes the plugin's declared build commands as the current user."}
-	p := ActionProposal{ID: "update-herdr-plugin", Key: f.Key, Mode: ActionManual, Label: "Review Herdr plugin update", Reason: "Update the validated GitHub source " + target + " only after confirming its installer and build-command effects.", TargetIDs: []string{id}, TargetVersion: Fact{State: EvidenceKnown, Label: "Requested branch revision", Value: sourceFactValue(f, "Requested branch revision"), Source: "public GitHub branch metadata"}, Preconditions: []Fact{{State: EvidenceKnown, Label: "Installed plugin revision", Value: src.ResolvedCommit, Source: "validated Herdr registry"}, {State: EvidenceKnown, Label: "Requested ref", Value: src.RequestedRef, Source: "validated Herdr registry"}}, VerificationCheckID: "herdr-plugins", SideEffects: sideEffects}
+	actionID := "update-herdr-plugin"
+	if id != "" {
+		actionID = "update-herdr-plugin-" + sanitizeActionID(id)
+	}
+	p := ActionProposal{
+		ID:                  actionID,
+		Key:                 f.Key,
+		Mode:                ActionManual,
+		Label:               "Review Herdr plugin update",
+		Reason:              "Update the validated GitHub source " + target + " only after confirming its installer and build-command effects.",
+		TargetIDs:           []string{id},
+		TargetVersion:       Fact{State: EvidenceKnown, Label: "Requested branch revision", Value: sourceFactValue(f, "Requested branch revision"), Source: "public GitHub branch metadata"},
+		Preconditions:       []Fact{{State: EvidenceKnown, Label: "Installed plugin revision", Value: src.ResolvedCommit, Source: "validated Herdr registry"}, {State: EvidenceKnown, Label: "Requested ref", Value: src.RequestedRef, Source: "validated Herdr registry"}},
+		VerificationCheckID: "herdr-plugins",
+		SideEffects:         sideEffects,
+	}
 	executable, ok := findExecutable(h, "herdr")
 	if !ok {
 		return p
@@ -368,6 +383,8 @@ func herdrPluginUpdateProposal(h *Host, src herdrPluginSource, id string, f Find
 	}
 	args = append(args, "--yes")
 	p.Mode = ActionAutomatic
+	p.Label = "Update Herdr plugin " + target
+	p.Reason = "Update Herdr plugin " + target + " to latest upstream revision"
 	p.Steps = []CommandStep{{Label: "Install the selected Herdr plugin source", Command: Command{Executable: executable, Args: args}}}
 	return p
 }

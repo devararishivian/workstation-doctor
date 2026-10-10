@@ -139,8 +139,15 @@ func sourceInstance(h *Host, id string, r ResourceSource) Instance {
 	if canonical, e := filepath.EvalSymlinks(location); e == nil {
 		location = canonical
 	}
+	prov := Provenance{State: EvidenceUnavailable}
+	if r.Manager != "" {
+		prov = Provenance{State: EvidenceKnown, Manager: r.Manager}
+	}
 	identity := fmt.Sprintf("%s:%x", id, sha256.Sum256([]byte(r.Scope+"\x00"+filepath.Clean(location)+"\x00"+r.Identity)))
-	i := Instance{ID: identity, IntegrationID: id, Scope: r.Scope, Availability: AvailabilityPresent, DiscoverySource: "declared resource", ObservedAt: hostNow(h), Root: Fact{State: EvidenceKnown, Label: "Declared resource root", Value: r.Path, Source: "scope-relative declaration", ObservedAt: hostNow(h)}, Provenance: Provenance{State: EvidenceUnavailable}, Configuration: []Fact{{State: EvidenceKnown, Label: "Source kind", Value: r.Kind, Source: "declared resource"}, {State: EvidenceKnown, Label: "Source identity", Value: r.Identity, Source: "validated declaration"}, {State: EvidenceKnown, Label: "Requested ref", Value: r.RequestedRef, Source: "declared resource"}}}
+	i := Instance{ID: identity, IntegrationID: id, Scope: r.Scope, Availability: AvailabilityPresent, DiscoverySource: "declared resource", ObservedAt: hostNow(h), Root: Fact{State: EvidenceKnown, Label: "Declared resource root", Value: r.Path, Source: "scope-relative declaration", ObservedAt: hostNow(h)}, Provenance: prov, Configuration: []Fact{{State: EvidenceKnown, Label: "Source kind", Value: r.Kind, Source: "declared resource"}, {State: EvidenceKnown, Label: "Source identity", Value: r.Identity, Source: "validated declaration"}, {State: EvidenceKnown, Label: "Requested ref", Value: r.RequestedRef, Source: "declared resource"}}}
+	if r.Manager != "" {
+		i.Configuration = append(i.Configuration, Fact{State: EvidenceKnown, Label: "Resource manager", Value: r.Manager, Source: "declared resource"})
+	}
 	if r.Pinned {
 		i.Configuration = append(i.Configuration, Fact{State: EvidenceKnown, Label: "Source constraint", Value: "pinned or ref constrained", Source: "declared resource"})
 	}
@@ -148,7 +155,7 @@ func sourceInstance(h *Host, id string, r ResourceSource) Instance {
 }
 
 func instanceSource(i Instance) ResourceSource {
-	r := ResourceSource{Path: i.Root.Value, Scope: i.Scope}
+	r := ResourceSource{Path: i.Root.Value, Scope: i.Scope, Manager: i.Provenance.Manager}
 	for _, f := range i.Configuration {
 		switch f.Label {
 		case "Source kind":
@@ -157,6 +164,8 @@ func instanceSource(i Instance) ResourceSource {
 			r.Identity = f.Value
 		case "Requested ref":
 			r.RequestedRef = f.Value
+		case "Resource manager":
+			r.Manager = f.Value
 		case "Source constraint":
 			r.Pinned = true
 		}

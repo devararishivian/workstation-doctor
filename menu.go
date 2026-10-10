@@ -160,6 +160,24 @@ func (d *doctorApp) KeyMap() tui.KeyMap {
 			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.declinePreparedAction() }),
 			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.declinePreparedAction() }),
 			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.declinePreparedAction() }),
+			tui.On(tui.KeyDown, func(_ tui.KeyEvent) { d.scrollOffset.Update(func(v int) int { return v + 1 }) }),
+			tui.On(tui.Rune('j'), func(_ tui.KeyEvent) { d.scrollOffset.Update(func(v int) int { return v + 1 }) }),
+			tui.On(tui.KeyUp, func(_ tui.KeyEvent) {
+				d.scrollOffset.Update(func(v int) int {
+					if v > 0 {
+						return v - 1
+					}
+					return 0
+				})
+			}),
+			tui.On(tui.Rune('k'), func(_ tui.KeyEvent) {
+				d.scrollOffset.Update(func(v int) int {
+					if v > 0 {
+						return v - 1
+					}
+					return 0
+				})
+			}),
 		}
 	case "action_done":
 		return tui.KeyMap{
@@ -167,6 +185,24 @@ func (d *doctorApp) KeyMap() tui.KeyMap {
 			tui.On(tui.KeyEnter, func(_ tui.KeyEvent) { d.returnFromActionDone() }),
 			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.returnFromActionDone() }),
 			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
+			tui.On(tui.KeyDown, func(_ tui.KeyEvent) { d.scrollOffset.Update(func(v int) int { return v + 1 }) }),
+			tui.On(tui.Rune('j'), func(_ tui.KeyEvent) { d.scrollOffset.Update(func(v int) int { return v + 1 }) }),
+			tui.On(tui.KeyUp, func(_ tui.KeyEvent) {
+				d.scrollOffset.Update(func(v int) int {
+					if v > 0 {
+						return v - 1
+					}
+					return 0
+				})
+			}),
+			tui.On(tui.Rune('k'), func(_ tui.KeyEvent) {
+				d.scrollOffset.Update(func(v int) int {
+					if v > 0 {
+						return v - 1
+					}
+					return 0
+				})
+			}),
 		}
 	case "history":
 		return tui.KeyMap{

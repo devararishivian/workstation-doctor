@@ -178,3 +178,111 @@ func TestSuperpowersRequestedRef(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckSuperpowersSourceWithGitTagAndRelease(t *testing.T) {
+	t.Run("outdated release proposes update", func(t *testing.T) {
+		h := testHost(t)
+		resourceFile(t, filepath.Join(h.Home, "git"), "synthetic; never execute")
+		if e := os.Chmod(filepath.Join(h.Home, "git"), 0o700); e != nil {
+			t.Fatal(e)
+		}
+		resourceFile(t, filepath.Join(h.Home, "pi"), "synthetic pi")
+		if e := os.Chmod(filepath.Join(h.Home, "pi"), 0o700); e != nil {
+			t.Fatal(e)
+		}
+		root := filepath.Join(h.Home, "superpowers")
+		resourceFile(t, filepath.Join(root, ".git", "config"), "[core]\nrepositoryformatversion = 0\n")
+
+		h.RunRead = func(_ context.Context, c Command) (CommandResult, error) {
+			last := strings.Join(c.Args, " ")
+			if strings.Contains(last, "rev-parse") {
+				return CommandResult{Stdout: []byte(strings.Repeat("a", 40))}, nil
+			}
+			if strings.Contains(last, "symbolic-ref") {
+				return CommandResult{Stdout: []byte("main")}, nil
+			}
+			if strings.Contains(last, "status") {
+				return CommandResult{Stdout: []byte("")}, nil
+			}
+			if strings.Contains(last, "describe") {
+				return CommandResult{Stdout: []byte("v6.4.2")}, nil
+			}
+			return CommandResult{ExitCode: 1}, errors.New("unsupported")
+		}
+
+		h.Fetch = func(_ context.Context, url string) ([]byte, error) {
+			if strings.Contains(url, "releases/latest") {
+				return []byte(`{"tag_name":"v7.0.0","html_url":"https://github.com/obra/superpowers/releases/tag/v7.0.0"}`), nil
+			}
+			return nil, errors.New("not found")
+		}
+
+		source := ResourceSource{Kind: "git", Identity: "github.com/obra/superpowers", Path: root, Manager: "pi", Scope: "user"}
+		i := sourceInstance(h, "superpowers", source)
+		findings := checkSuperpowersSource(t.Context(), h, Scope{}, i)
+		if len(findings) != 1 {
+			t.Fatalf("expected 1 finding, got %d", len(findings))
+		}
+		f := findings[0]
+		if f.Outcome != OutcomeAttention {
+			t.Fatalf("expected OutcomeAttention, got %v: %s", f.Outcome, f.Explanation)
+		}
+		if len(f.Actions) != 1 {
+			t.Fatalf("expected 1 action proposal, got %d", len(f.Actions))
+		}
+		if f.Actions[0].Mode != ActionAutomatic {
+			t.Fatalf("expected ActionAutomatic, got %v", f.Actions[0].Mode)
+		}
+		if !strings.Contains(f.Actions[0].Steps[0].Command.Args[1], "git:github.com/obra/superpowers") {
+			t.Fatalf("unexpected step command args: %v", f.Actions[0].Steps[0].Command.Args)
+		}
+	})
+
+	t.Run("current release matches ok", func(t *testing.T) {
+		h := testHost(t)
+		resourceFile(t, filepath.Join(h.Home, "git"), "synthetic; never execute")
+		if e := os.Chmod(filepath.Join(h.Home, "git"), 0o700); e != nil {
+			t.Fatal(e)
+		}
+		root := filepath.Join(h.Home, "superpowers")
+		resourceFile(t, filepath.Join(root, ".git", "config"), "[core]\nrepositoryformatversion = 0\n")
+
+		h.RunRead = func(_ context.Context, c Command) (CommandResult, error) {
+			last := strings.Join(c.Args, " ")
+			if strings.Contains(last, "rev-parse") {
+				return CommandResult{Stdout: []byte(strings.Repeat("a", 40))}, nil
+			}
+			if strings.Contains(last, "symbolic-ref") {
+				return CommandResult{Stdout: []byte("main")}, nil
+			}
+			if strings.Contains(last, "status") {
+				return CommandResult{Stdout: []byte("")}, nil
+			}
+			if strings.Contains(last, "describe") {
+				return CommandResult{Stdout: []byte("v7.0.0")}, nil
+			}
+			return CommandResult{ExitCode: 1}, errors.New("unsupported")
+		}
+
+		h.Fetch = func(_ context.Context, url string) ([]byte, error) {
+			if strings.Contains(url, "releases/latest") {
+				return []byte(`{"tag_name":"v7.0.0","html_url":"https://github.com/obra/superpowers/releases/tag/v7.0.0"}`), nil
+			}
+			return nil, errors.New("not found")
+		}
+
+		source := ResourceSource{Kind: "git", Identity: "github.com/obra/superpowers", Path: root, Manager: "pi", Scope: "user"}
+		i := sourceInstance(h, "superpowers", source)
+		findings := checkSuperpowersSource(t.Context(), h, Scope{}, i)
+		if len(findings) != 1 {
+			t.Fatalf("expected 1 finding, got %d", len(findings))
+		}
+		f := findings[0]
+		if f.Outcome != OutcomeOK {
+			t.Fatalf("expected OutcomeOK, got %v: %s", f.Outcome, f.Explanation)
+		}
+		if len(f.Actions) != 0 {
+			t.Fatalf("expected 0 actions for up to date release, got %d", len(f.Actions))
+		}
+	})
+}
