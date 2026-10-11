@@ -638,4 +638,3 @@ func TestApplyPopulatesInstalledVersion(t *testing.T) {
 		t.Fatalf("expected InstalledVersion '1.2.3', got %q", mock.started[0].InstalledVersion)
 	}
 }
-

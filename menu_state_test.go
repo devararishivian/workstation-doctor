@@ -1812,9 +1812,3 @@ func TestActionDoneScreenWording(t *testing.T) {
 		t.Errorf("should not contain old hint 're-run audit'")
 	}
 }
-
-
-
-
-
-

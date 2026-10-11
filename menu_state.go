@@ -367,11 +367,12 @@ func (d *doctorApp) prepareAutomaticFixesByCandidate(candidates []fixCandidate) 
 	}
 
 	if len(preps) == 0 {
-		if len(candidates) == 1 {
+		switch {
+		case len(candidates) == 1:
 			d.statusMsg.Set("No automatic maintenance action available for " + candidates[0].Component)
-		} else if len(candidates) > 1 {
+		case len(candidates) > 1:
 			d.statusMsg.Set("No automatic maintenance action available for selected components")
-		} else {
+		default:
 			d.statusMsg.Set("No actions needed. All components are current.")
 		}
 		d.mode.Set("no_fixes")
@@ -440,11 +441,12 @@ func (d *doctorApp) prepareAutomaticFixes(filterComponents []string) {
 	}
 
 	if len(preps) == 0 {
-		if len(filterComponents) == 1 {
+		switch {
+		case len(filterComponents) == 1:
 			d.statusMsg.Set("No automatic maintenance action available for " + filterComponents[0])
-		} else if len(filterComponents) > 1 {
+		case len(filterComponents) > 1:
 			d.statusMsg.Set("No automatic maintenance action available for selected components")
-		} else {
+		default:
 			d.statusMsg.Set("No actions needed. All components are current.")
 		}
 		d.mode.Set("no_fixes")

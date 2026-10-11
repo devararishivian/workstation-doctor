@@ -496,6 +496,3 @@ func TestHistoryRenderingOldLabels(t *testing.T) {
 		t.Errorf("should not contain column 'LABEL'")
 	}
 }
-
-
-

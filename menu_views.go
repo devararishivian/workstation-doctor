@@ -1589,7 +1589,7 @@ func (d *doctorApp) renderSelectFixes() *tui.Element {
 		}
 
 		cursor := "  "
-		itemStyle := tui.NewStyle()
+		var itemStyle tui.Style
 		if isSelected {
 			cursor = "► "
 			itemStyle = tui.NewStyle().Foreground(catppuccinGreen).Bold()
@@ -1597,7 +1597,7 @@ func (d *doctorApp) renderSelectFixes() *tui.Element {
 			itemStyle = tui.NewStyle().Foreground(catppuccinDim)
 		}
 
-		boxStyle := tui.NewStyle()
+		var boxStyle tui.Style
 		if it.Selected {
 			boxStyle = tui.NewStyle().Foreground(catppuccinGreen).Bold()
 		} else {
