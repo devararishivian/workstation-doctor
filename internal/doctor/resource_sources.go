@@ -285,12 +285,16 @@ func evaluateResource(ctx context.Context, h *Host, i Instance, check string) []
 				f.References = append(f.References, PublicReference{Kind: "package", Label: "npm package", URL: "https://www.npmjs.com/package/" + r.Identity})
 				f.Evidence = append(f.Evidence, Fact{State: EvidenceKnown, Label: "Package identity", Value: r.Identity, Source: "declared resource", ObservedAt: hostNow(h)})
 				if piExe, ok := findExecutable(h, "pi"); ok {
+					cmd := "update"
+					if _, err := os.Stat(r.Path); err != nil {
+						cmd = "install"
+					}
 					f.Actions = []ActionProposal{
 						{
 							ID:                  "update-pi-pkg-" + sanitizeActionID(r.Identity),
 							Key:                 f.Key,
 							Mode:                ActionAutomatic,
-							Label:               fmt.Sprintf("Update %s to %s", r.Identity, remote.Version),
+							Label:               fmt.Sprintf("Update %s via Pi", r.Identity),
 							Reason:              fmt.Sprintf("Package %s is outdated (%s -> %s)", r.Identity, metadata.Version, remote.Version),
 							TargetIDs:           []string{i.ID},
 							TargetVersion:       Fact{State: EvidenceKnown, Label: "Target version", Value: remote.Version},
@@ -298,15 +302,15 @@ func evaluateResource(ctx context.Context, h *Host, i Instance, check string) []
 							VerificationCheckID: "pi-packages",
 							Steps: []CommandStep{
 								{
-									Label: fmt.Sprintf("Run pi install npm:%s", r.Identity),
+									Label: fmt.Sprintf("Run pi %s npm:%s", cmd, r.Identity),
 									Command: Command{
 										Executable: piExe,
-										Args:       []string{"install", "npm:" + r.Identity},
+										Args:       []string{cmd, "npm:" + r.Identity},
 									},
 								},
 							},
 							SideEffects: []string{
-								"Installs the updated extension package into Pi settings and node_modules.",
+								"Pulls the latest version from the npm registry and updates the local package.",
 							},
 						},
 					}

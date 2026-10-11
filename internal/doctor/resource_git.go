@@ -245,12 +245,16 @@ func inspectGitResource(ctx context.Context, h *Host, _ Instance, r ResourceSour
 					f.Outcome = OutcomeAttention
 					f.Explanation = fmt.Sprintf("A newer upstream release (%s) is available for %s (installed: %s).", remoteTag, filepath.Base(r.Identity), localTag)
 					if piExe, ok := findExecutable(h, "pi"); ok && r.Manager == "pi" {
+						cmd := "update"
+						if _, err := os.Stat(r.Path); err != nil {
+							cmd = "install"
+						}
 						f.Actions = []ActionProposal{
 							{
 								ID:                  "update-pi-git-" + sanitizeActionID(r.Identity),
 								Key:                 f.Key,
 								Mode:                ActionAutomatic,
-								Label:               fmt.Sprintf("Update %s to %s", filepath.Base(r.Identity), remoteTag),
+								Label:               fmt.Sprintf("Update %s via Pi", filepath.Base(r.Identity)),
 								Reason:              fmt.Sprintf("Git package %s is outdated (%s -> %s)", filepath.Base(r.Identity), localTag, remoteTag),
 								TargetIDs:           []string{r.Identity},
 								TargetVersion:       Fact{State: EvidenceKnown, Label: "Target version", Value: remoteTag},
@@ -258,15 +262,15 @@ func inspectGitResource(ctx context.Context, h *Host, _ Instance, r ResourceSour
 								VerificationCheckID: f.Key.CheckID,
 								Steps: []CommandStep{
 									{
-										Label: fmt.Sprintf("Run pi install git:%s", r.Identity),
+										Label: fmt.Sprintf("Run pi %s git:%s", cmd, r.Identity),
 										Command: Command{
 											Executable: piExe,
-											Args:       []string{"install", "git:" + r.Identity},
+											Args:       []string{cmd, "git:" + r.Identity},
 										},
 									},
 								},
 								SideEffects: []string{
-									"Updates the git package repository and reinstalls into Pi settings.",
+									"Pulls the latest version from the remote repository and updates the local checkout.",
 								},
 							},
 						}
