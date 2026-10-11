@@ -770,6 +770,108 @@ func (d *doctorApp) renderDetail() *tui.Element {
 				}
 				contentBox.AddChild(summaryCard)
 
+			case "Update Available":
+				updateBox := tui.New(
+					tui.WithDisplay(tui.DisplayFlex),
+					tui.WithDirection(tui.Column),
+					tui.WithGap(1),
+					tui.WithPadding(1),
+					tui.WithBorder(tui.BorderRounded),
+					tui.WithBorderStyle(tui.NewStyle().Foreground(catppuccinYellow)),
+				)
+				updateBox.AddChild(tui.New(
+					tui.WithText("Update Available"),
+					tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow).Bold()),
+				))
+				uRows := sec.Rows
+				if len(uRows) > 8 {
+					offset := d.scrollOffset.Get()
+					if offset > len(uRows)-1 && len(uRows) > 0 {
+						offset = len(uRows) - 1
+					}
+					if offset < 0 {
+						offset = 0
+					}
+					visible := uRows[offset:]
+					if len(visible) > 8 {
+						visible = visible[:8]
+					}
+					updateBox.AddChild(tui.New(
+						tui.WithText(fmt.Sprintf("  (Showing %d–%d of %d · Use ↑/↓ to scroll)", offset+1, offset+len(visible), len(uRows))),
+						tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow)),
+					))
+					uRows = visible
+				}
+				for _, row := range uRows {
+					switch {
+					case strings.Contains(row.Label, "Manual command"):
+						cmdRow := tui.New(
+							tui.WithDisplay(tui.DisplayFlex),
+							tui.WithDirection(tui.Column),
+							tui.WithGap(0),
+						)
+						cmdRow.AddChild(tui.New(
+							tui.WithText("  Manual command:"),
+							tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+						))
+						cmdRow.AddChild(tui.New(
+							tui.WithText("  $ "+row.Value),
+							tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinGreen).Bold()),
+						))
+						updateBox.AddChild(cmdRow)
+					case strings.HasPrefix(row.Label, "Fix:"):
+						fixRow := tui.New(
+							tui.WithDisplay(tui.DisplayFlex),
+							tui.WithDirection(tui.Column),
+							tui.WithGap(0),
+						)
+						fixRow.AddChild(tui.New(
+							tui.WithText("• "+row.Label),
+							tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinGreen).Bold()),
+						))
+						if row.Value != "" {
+							fixRow.AddChild(tui.New(
+								tui.WithText("  "+row.Value),
+								tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+							))
+						}
+						updateBox.AddChild(fixRow)
+					case row.Label == "Documentation":
+						docRow := tui.New(
+							tui.WithDisplay(tui.DisplayFlex),
+							tui.WithDirection(tui.Row),
+							tui.WithGap(1),
+						)
+						docRow.AddChild(tui.New(
+							tui.WithText("  Documentation:"),
+							tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+						))
+						docRow.AddChild(tui.New(
+							tui.WithText(row.Value),
+							tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinBlue)),
+						))
+						updateBox.AddChild(docRow)
+					default:
+						itemRow := tui.New(
+							tui.WithDisplay(tui.DisplayFlex),
+							tui.WithDirection(tui.Column),
+							tui.WithGap(0),
+						)
+						itemRow.AddChild(tui.New(
+							tui.WithText("• "+row.Label),
+							tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow).Bold()),
+						))
+						if row.Value != "" {
+							itemRow.AddChild(tui.New(
+								tui.WithText("  "+row.Value),
+								tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+							))
+						}
+						updateBox.AddChild(itemRow)
+					}
+				}
+				contentBox.AddChild(updateBox)
+
 			case "Items Requiring Attention":
 				attnBox := tui.New(
 					tui.WithDisplay(tui.DisplayFlex),
@@ -932,10 +1034,10 @@ func (d *doctorApp) renderDetail() *tui.Element {
 	root.AddChild(contentBox)
 	root.AddChild(hrLine())
 
-	navText := "[Esc / b: Back to Results · ↑/↓: Scroll · q: Quit]"
+	navText := "[Esc/b: Back · ↑/↓: Scroll · q: Quit]"
 	hasAutoFix := false
 	for _, sec := range det.Sections {
-		if sec.Heading == "Proposed Actions" {
+		if sec.Heading == "Update Available" || sec.Heading == "Proposed Actions" {
 			for _, r := range sec.Rows {
 				if strings.Contains(r.Label, "[Automatic]") {
 					hasAutoFix = true
@@ -945,7 +1047,7 @@ func (d *doctorApp) renderDetail() *tui.Element {
 		}
 	}
 	if hasAutoFix {
-		navText = "[Esc / b: Back to Results · 3 / p: Run Automatic Fix · 2: Manual Steps · ↑/↓: Scroll · q: Quit]"
+		navText = "[Esc/b: Back · f: Fix this component · ↑/↓: Scroll · q: Quit]"
 	}
 	nav := tui.New(
 		tui.WithText(navText),

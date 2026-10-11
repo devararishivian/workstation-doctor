@@ -175,3 +175,135 @@ func TestHistoryDetail(t *testing.T) {
 		t.Fatalf("missing step in history detail: %s", text)
 	}
 }
+
+func TestComponentDetailMergesActionsIntoUpdateSection(t *testing.T) {
+	key := doctor.FindingKey{IntegrationID: "pi", CheckID: "pi", InstanceID: "inst-1"}
+	report := doctor.AuditReport{
+		Findings: []doctor.Finding{
+			{
+				Key:         key,
+				Outcome:     doctor.OutcomeAttention,
+				Explanation: "Version 1.0.0 is installed; version 2.0.0 is available.",
+				References: []doctor.PublicReference{
+					{Kind: "doc", Label: "Documentation", URL: "https://example.com/docs"},
+				},
+				Actions: []doctor.ActionProposal{
+					{
+						ID:     "update-pi",
+						Label:  "Update Pi",
+						Mode:   doctor.ActionAutomatic,
+						Reason: "New release",
+						Steps: []doctor.CommandStep{
+							{
+								Label: "Run upgrade",
+								Command: doctor.Command{
+									Executable: "/usr/local/bin/pi",
+									Args:       []string{"upgrade"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	detail := componentDetail(report, "pi")
+
+	for _, sec := range detail.Sections {
+		if sec.Heading == "Items Requiring Attention" {
+			t.Errorf("found deprecated section 'Items Requiring Attention'")
+		}
+		if sec.Heading == "Proposed Actions" {
+			t.Errorf("found deprecated section 'Proposed Actions'")
+		}
+	}
+
+	var updateSec *DetailSection
+	for i := range detail.Sections {
+		if detail.Sections[i].Heading == "Update Available" {
+			updateSec = &detail.Sections[i]
+			break
+		}
+	}
+
+	if updateSec == nil {
+		t.Fatalf("expected section 'Update Available' not found in detail: %+v", detail.Sections)
+	}
+
+	hasManualCmd := false
+	var manualCmdVal string
+	hasFix := false
+	hasDoc := false
+	for _, row := range updateSec.Rows {
+		if strings.Contains(row.Label, "Manual command") {
+			hasManualCmd = true
+			manualCmdVal = row.Value
+		}
+		if strings.Contains(row.Label, "Fix:") {
+			hasFix = true
+		}
+		if strings.Contains(row.Label, "Documentation") {
+			hasDoc = true
+		}
+	}
+
+	if !hasManualCmd {
+		t.Errorf("expected row with label containing 'Manual command', rows: %+v", updateSec.Rows)
+	}
+	expectedCmd := "/usr/local/bin/pi upgrade"
+	if manualCmdVal != expectedCmd {
+		t.Errorf("expected manual command %q, got %q", expectedCmd, manualCmdVal)
+	}
+	if !hasFix {
+		t.Errorf("expected row with label starting with 'Fix:', rows: %+v", updateSec.Rows)
+	}
+	if !hasDoc {
+		t.Errorf("expected row with label 'Documentation', rows: %+v", updateSec.Rows)
+	}
+}
+
+func TestRenderDetailWithUpdateAvailable(t *testing.T) {
+	key := doctor.FindingKey{IntegrationID: "pi", CheckID: "pi", InstanceID: "inst-1"}
+	report := doctor.AuditReport{
+		Findings: []doctor.Finding{
+			{
+				Key:         key,
+				Outcome:     doctor.OutcomeAttention,
+				Explanation: "Version 1.0.0 is installed; version 2.0.0 is available.",
+				References: []doctor.PublicReference{
+					{Kind: "doc", Label: "Documentation", URL: "https://example.com/docs"},
+				},
+				Actions: []doctor.ActionProposal{
+					{
+						ID:     "update-pi",
+						Label:  "Update Pi",
+						Mode:   doctor.ActionAutomatic,
+						Reason: "New release",
+						Steps: []doctor.CommandStep{
+							{
+								Label: "Run upgrade",
+								Command: doctor.Command{
+									Executable: "/usr/local/bin/pi",
+									Args:       []string{"upgrade"},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	app := newDoctorApp(t.Context(), nil)
+	app.report.Set(report)
+	det := componentDetail(report, "pi")
+	app.currentDetail.Set(det)
+
+	elem := app.renderDetail()
+	if elem == nil {
+		t.Fatal("renderDetail returned nil")
+	}
+}
+
+

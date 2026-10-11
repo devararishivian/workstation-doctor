@@ -263,40 +263,51 @@ func componentDetail(report doctor.AuditReport, checkID string) Detail {
 		}
 	}
 
-	var attentionRows []DetailRow
+	var updateRows []DetailRow
 	for _, f := range findings {
 		if f.Outcome == doctor.OutcomeAttention {
 			name := findingInstanceName(report, f)
 			if name == "" || name == f.Explanation {
 				name = checkID
 			}
-			attentionRows = append(attentionRows, DetailRow{
-				Label:  name,
-				Value:  f.Explanation,
-				Source: "Update Available",
+			updateRows = append(updateRows, DetailRow{
+				Label: name,
+				Value: f.Explanation,
 			})
+			for _, a := range f.Actions {
+				updateRows = append(updateRows, DetailRow{
+					Label: fmt.Sprintf("Fix: %s [%s]", a.Label, a.Mode),
+					Value: a.Reason,
+				})
+				if len(a.Steps) > 0 {
+					cmd := a.Steps[0].Command.Executable
+					if len(a.Steps[0].Command.Args) > 0 {
+						if cmd != "" {
+							cmd += " " + strings.Join(a.Steps[0].Command.Args, " ")
+						} else {
+							cmd = strings.Join(a.Steps[0].Command.Args, " ")
+						}
+					}
+					if cmd != "" {
+						updateRows = append(updateRows, DetailRow{
+							Label: "Manual command",
+							Value: cmd,
+						})
+					}
+				}
+			}
+			if len(f.References) > 0 && f.References[0].URL != "" {
+				updateRows = append(updateRows, DetailRow{
+					Label: "Documentation",
+					Value: f.References[0].URL,
+				})
+			}
 		}
 	}
-	if len(attentionRows) > 0 {
+	if len(updateRows) > 0 {
 		detail.Sections = append(detail.Sections, DetailSection{
-			Heading: "Items Requiring Attention",
-			Rows:    attentionRows,
-		})
-	}
-
-	var actRows []DetailRow
-	for _, f := range findings {
-		for _, a := range f.Actions {
-			actRows = append(actRows, DetailRow{
-				Label: fmt.Sprintf("%s [%s]", a.Label, a.Mode),
-				Value: a.Reason,
-			})
-		}
-	}
-	if len(actRows) > 0 {
-		detail.Sections = append(detail.Sections, DetailSection{
-			Heading: "Proposed Actions",
-			Rows:    actRows,
+			Heading: "Update Available",
+			Rows:    updateRows,
 		})
 	}
 

@@ -1129,3 +1129,40 @@ func TestResultsKeyBindings(t *testing.T) {
 		t.Error("key '3' should be replaced by 'f' in results mode")
 	}
 }
+
+func TestDetailKeyBindings(t *testing.T) {
+	service, _ := syntheticServiceForMenu(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	d := newDoctorApp(ctx, service)
+	d.mode.Set("detail")
+
+	km := d.KeyMap()
+	hasF, has3, hasP, has2 := false, false, false, false
+	for _, b := range km {
+		switch b.Pattern.Rune {
+		case 'f':
+			hasF = true
+		case '3':
+			has3 = true
+		case 'p':
+			hasP = true
+		case '2':
+			has2 = true
+		}
+	}
+	if !hasF {
+		t.Error("expected 'f' key binding in detail mode")
+	}
+	if has3 {
+		t.Error("key '3' should be removed from detail mode")
+	}
+	if hasP {
+		t.Error("key 'p' should be removed from detail mode")
+	}
+	if has2 {
+		t.Error("key '2' should not exist in detail mode")
+	}
+}
+
