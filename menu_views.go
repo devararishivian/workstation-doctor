@@ -1219,19 +1219,6 @@ func (d *doctorApp) renderPreviewAction() *tui.Element {
 		}
 	case len(preps) == 1:
 		p := preps[0].Preview()
-		var cleanTargets []string
-		for _, tid := range p.TargetIDs {
-			if len(tid) > 20 && strings.Contains(tid, ":") {
-				parts := strings.Split(tid, ":")
-				cleanTargets = append(cleanTargets, parts[0])
-			} else {
-				cleanTargets = append(cleanTargets, tid)
-			}
-		}
-		targetDisplay := strings.Join(cleanTargets, ", ")
-		if targetDisplay == "" {
-			targetDisplay = p.CheckID
-		}
 
 		infoCard := tui.New(
 			tui.WithDisplay(tui.DisplayFlex),
@@ -1246,7 +1233,7 @@ func (d *doctorApp) renderPreviewAction() *tui.Element {
 			tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinMauve).Bold()),
 		))
 		infoCard.AddChild(tui.New(
-			tui.WithText("Component: "+p.CheckID+" ("+targetDisplay+")"),
+			tui.WithText("Component: "+p.CheckID),
 			tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
 		))
 		infoCard.AddChild(tui.New(

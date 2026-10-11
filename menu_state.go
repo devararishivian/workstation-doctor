@@ -332,18 +332,69 @@ func (d *doctorApp) deselectAllFixes() {
 }
 
 func (d *doctorApp) confirmSelectedFixes() {
-	var selectedComponents []string
+	var selected []fixCandidate
 	for _, item := range d.selectFixItems.Get() {
 		if item.Selected {
-			selectedComponents = append(selectedComponents, item.Component)
+			selected = append(selected, item)
 		}
 	}
-	if len(selectedComponents) == 0 {
-		d.statusMsg.Set("No actions needed. All components are current.")
+	if len(selected) == 0 {
+		d.statusMsg.Set("No updates selected.")
+		return
+	}
+	d.prepareAutomaticFixesByCandidate(selected)
+}
+
+func (d *doctorApp) prepareAutomaticFixesByCandidate(candidates []fixCandidate) {
+	var preps []app.PreparedAction
+	seenAction := map[string]bool{}
+
+	for _, c := range candidates {
+		actionKey := c.Key.IntegrationID + "/" + c.Key.CheckID + "/" + c.Key.InstanceID + ":" + c.ActionID
+		if seenAction[actionKey] {
+			continue
+		}
+		if d.service == nil {
+			d.statusMsg.Set("Service unavailable")
+			return
+		}
+		prep, err := d.service.Prepare(d.ctx, c.Key, c.ActionID)
+		if err != nil {
+			continue
+		}
+		seenAction[actionKey] = true
+		preps = append(preps, prep)
+	}
+
+	if len(preps) == 0 {
+		if len(candidates) == 1 {
+			d.statusMsg.Set("No automatic maintenance action available for " + candidates[0].Component)
+		} else if len(candidates) > 1 {
+			d.statusMsg.Set("No automatic maintenance action available for selected components")
+		} else {
+			d.statusMsg.Set("No actions needed. All components are current.")
+		}
 		d.mode.Set("no_fixes")
 		return
 	}
-	d.prepareAutomaticFixes(selectedComponents)
+
+	d.finishPreparedActions(preps)
+}
+
+func (d *doctorApp) finishPreparedActions(preps []app.PreparedAction) {
+	d.preparedActions = preps
+	if len(preps) == 1 {
+		d.preparedAction = &preps[0]
+		det := actionDetail(preps[0].Preview())
+		d.currentDetail.Set(det)
+		d.activeDetail.Set(detailText(det))
+	} else {
+		d.preparedAction = nil
+		d.currentDetail.Set(Detail{})
+		d.activeDetail.Set("")
+	}
+	d.scrollOffset.Set(0)
+	d.mode.Set("preview_action")
 }
 
 func (d *doctorApp) prepareAutomaticFixes(filterComponents []string) {
@@ -400,19 +451,7 @@ func (d *doctorApp) prepareAutomaticFixes(filterComponents []string) {
 		return
 	}
 
-	d.preparedActions = preps
-	if len(preps) == 1 {
-		d.preparedAction = &preps[0]
-		det := actionDetail(preps[0].Preview())
-		d.currentDetail.Set(det)
-		d.activeDetail.Set(detailText(det))
-	} else {
-		d.preparedAction = nil
-		d.currentDetail.Set(Detail{})
-		d.activeDetail.Set("")
-	}
-	d.scrollOffset.Set(0)
-	d.mode.Set("preview_action")
+	d.finishPreparedActions(preps)
 }
 
 func (d *doctorApp) prepareFirstAction() {

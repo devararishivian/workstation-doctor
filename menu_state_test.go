@@ -844,6 +844,12 @@ func TestMenuAutomaticFixWithActionPreparesPreview(t *testing.T) {
 	if strings.Contains(text, "Execute this action?") {
 		t.Errorf("should not contain old prompt 'Execute this action?'")
 	}
+	if !strings.Contains(text, "Component: update") {
+		t.Errorf("expected 'Component: update', got:\n%s", text)
+	}
+	if strings.Contains(text, "Component: update (") {
+		t.Errorf("expected no type/redundant parentheses after component name, got:\n%s", text)
+	}
 }
 
 func TestMenuBatchAutomaticFixMultipleComponents(t *testing.T) {
@@ -1407,8 +1413,97 @@ func TestSelectFixesConfirm(t *testing.T) {
 	d.enterSelectFixes()
 	d.deselectAllFixes()
 	d.confirmSelectedFixes()
-	if d.mode.Get() != "no_fixes" {
-		t.Fatalf("expected mode no_fixes when nothing selected, got %q", d.mode.Get())
+	if d.mode.Get() != "select_fixes" {
+		t.Fatalf("expected mode select_fixes when nothing selected, got %q", d.mode.Get())
+	}
+	if d.statusMsg.Get() != "No updates selected." {
+		t.Fatalf("expected status 'No updates selected.', got %q", d.statusMsg.Get())
+	}
+}
+
+func TestSelectFixesActionLevelFilteringSameCheckID(t *testing.T) {
+	keyPkg1 := doctor.FindingKey{IntegrationID: "pi-packages", CheckID: "pi-packages", InstanceID: "pkg-1"}
+	keyPkg2 := doctor.FindingKey{IntegrationID: "pi-packages", CheckID: "pi-packages", InstanceID: "pkg-2"}
+
+	prop1 := doctor.ActionProposal{
+		ID: "update-pkg-1", Key: keyPkg1, Mode: doctor.ActionAutomatic,
+		Label: "Update pkg-1", Reason: "Outdated pkg-1", TargetIDs: []string{"pkg-1"},
+		TargetVersion:       doctor.Fact{State: doctor.EvidenceKnown, Value: "2.0"},
+		Steps:               []doctor.CommandStep{{Label: "Run pi install pkg-1", Command: doctor.Command{Executable: "/usr/bin/true", Args: []string{"install", "pkg-1"}, Dir: "/tmp"}}},
+		Preconditions:       []doctor.Fact{{State: doctor.EvidenceKnown, Label: "installed", Value: "1.0"}},
+		VerificationCheckID: "pi-packages",
+	}
+	prop2 := doctor.ActionProposal{
+		ID: "update-pkg-2", Key: keyPkg2, Mode: doctor.ActionAutomatic,
+		Label: "Update pkg-2", Reason: "Outdated pkg-2", TargetIDs: []string{"pkg-2"},
+		TargetVersion:       doctor.Fact{State: doctor.EvidenceKnown, Value: "3.0"},
+		Steps:               []doctor.CommandStep{{Label: "Run pi install pkg-2", Command: doctor.Command{Executable: "/usr/bin/true", Args: []string{"install", "pkg-2"}, Dir: "/tmp"}}},
+		Preconditions:       []doctor.Fact{{State: doctor.EvidenceKnown, Label: "installed", Value: "2.0"}},
+		VerificationCheckID: "pi-packages",
+	}
+
+	engine, err := doctor.NewAuditEngine([]doctor.Definition{
+		{
+			Integration: doctor.Integration{ID: "pi-packages", Name: "Pi Packages"},
+			Discover: func(context.Context, *doctor.Host, doctor.Scope) doctor.Discovery {
+				return doctor.Discovery{Availability: doctor.AvailabilityPresent, Instances: []doctor.Instance{
+					{ID: "pkg-1", IntegrationID: "pi-packages", Availability: doctor.AvailabilityPresent, Version: doctor.Fact{State: doctor.EvidenceKnown, Value: "1.0"}},
+					{ID: "pkg-2", IntegrationID: "pi-packages", Availability: doctor.AvailabilityPresent, Version: doctor.Fact{State: doctor.EvidenceKnown, Value: "2.0"}},
+				}}
+			},
+			Checks: []doctor.CheckDefinition{
+				{ID: "pi-packages", Name: "Pi", Question: "Pi?", Order: 1, Evaluate: func(_ context.Context, _ *doctor.Host, _ doctor.Scope, inst doctor.Instance) []doctor.Finding {
+					if inst.ID == "pkg-1" {
+						return []doctor.Finding{{Key: keyPkg1, Outcome: doctor.OutcomeAttention, Actions: []doctor.ActionProposal{prop1}}}
+					}
+					return []doctor.Finding{{Key: keyPkg2, Outcome: doctor.OutcomeAttention, Actions: []doctor.ActionProposal{prop2}}}
+				}},
+			},
+		},
+	}, doctor.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	host, err := doctor.NewHost(doctor.Scope{}, doctor.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := app.NewService(engine, host, doctor.Scope{}, app.Options{
+		StateDir: t.TempDir(),
+		DBPath:   filepath.Join(t.TempDir(), "h", "history.db"),
+		Policy:   store.DefaultPolicy(),
+	})
+
+	d := newDoctorApp(t.Context(), service)
+	d.report.Set(doctor.AuditReport{
+		Findings: []doctor.Finding{
+			{Key: keyPkg1, Outcome: doctor.OutcomeAttention, Actions: []doctor.ActionProposal{prop1}},
+			{Key: keyPkg2, Outcome: doctor.OutcomeAttention, Actions: []doctor.ActionProposal{prop2}},
+		},
+	})
+
+	d.enterSelectFixes()
+	items := d.selectFixItems.Get()
+	if len(items) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(items))
+	}
+	if items[0].Component != items[1].Component {
+		t.Fatalf("expected both items to share CheckID 'pi-packages', got %q and %q", items[0].Component, items[1].Component)
+	}
+
+	// Deselect item 0 (pkg-1), keep item 1 (pkg-2)
+	d.toggleFixItem(0)
+	d.confirmSelectedFixes()
+
+	if d.mode.Get() != "preview_action" {
+		t.Fatalf("expected mode preview_action, got %q", d.mode.Get())
+	}
+	if len(d.preparedActions) != 1 {
+		t.Fatalf("expected only 1 prepared action, got %d", len(d.preparedActions))
+	}
+	if d.preparedActions[0].Preview().Label != "Update pkg-2" {
+		t.Fatalf("expected 'Update pkg-2', got %q", d.preparedActions[0].Preview().Label)
 	}
 }
 

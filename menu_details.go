@@ -279,18 +279,22 @@ func componentDetail(report doctor.AuditReport, checkID string) Detail {
 					Label: fmt.Sprintf("Fix: %s [%s]", a.Label, a.Mode),
 					Value: a.Reason,
 				})
-				if len(a.Steps) > 0 {
-					cmd := a.Steps[0].Command.Executable
-					if len(a.Steps[0].Command.Args) > 0 {
+				for i, step := range a.Steps {
+					cmd := step.Command.Executable
+					if len(step.Command.Args) > 0 {
 						if cmd != "" {
-							cmd += " " + strings.Join(a.Steps[0].Command.Args, " ")
+							cmd += " " + strings.Join(step.Command.Args, " ")
 						} else {
-							cmd = strings.Join(a.Steps[0].Command.Args, " ")
+							cmd = strings.Join(step.Command.Args, " ")
 						}
 					}
 					if cmd != "" {
+						lbl := "Manual command"
+						if len(a.Steps) > 1 {
+							lbl = fmt.Sprintf("Manual step %d (%s)", i+1, step.Label)
+						}
 						updateRows = append(updateRows, DetailRow{
-							Label: "Manual command",
+							Label: lbl,
 							Value: cmd,
 						})
 					}

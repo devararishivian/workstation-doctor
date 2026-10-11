@@ -275,6 +275,15 @@ func checkHerdrPluginSources(ctx context.Context, h *Host, _ Scope, i Instance) 
 	if ref == "" {
 		raw, e := h.Fetch(ctx, "https://api.github.com/repos/"+url.PathEscape(src.Owner)+"/"+url.PathEscape(src.Repo))
 		if e != nil || len(raw) > int(DefaultLimits().MaxHTTPBytes) {
+			if e != nil {
+				f.Evidence = append(f.Evidence, Fact{
+					State:      EvidenceKnown,
+					Label:      "GitHub API status",
+					Value:      "Request failed or rate limited",
+					Source:     "HTTP response",
+					ObservedAt: hostNow(h),
+				})
+			}
 			return []Finding{f}
 		}
 		var repo struct {

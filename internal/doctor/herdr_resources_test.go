@@ -498,4 +498,55 @@ func TestHerdrPluginCheckAddsAPIFailureDiagnostic(t *testing.T) {
 			t.Fatalf("expected 'GitHub API status' fact in evidence on compare error: %+v", findings[0].Evidence)
 		}
 	})
+
+	t.Run("default branch initial fetch failure", func(t *testing.T) {
+		h := testHost(t)
+		root := t.TempDir()
+		managed := filepath.Join(root, "managed")
+		makeExecutable(t, filepath.Join(h.Home, "git"))
+		resourceFile(t, filepath.Join(managed, ".git", "config"), "[core]\nrepositoryformatversion = 0\n")
+		entry := herdrRegistryEntry{
+			PluginID:   "initial-fail",
+			PluginRoot: managed,
+			Source: herdrPluginSource{
+				Kind:           "github",
+				Owner:          "a",
+				Repo:           "b",
+				RequestedRef:   "", // empty ref triggers initial repo fetch
+				ResolvedCommit: strings.Repeat("a", 40),
+				ManagedPath:    managed,
+			},
+		}
+		raw, _ := json.Marshal([]herdrRegistryEntry{entry})
+		resourceFile(t, filepath.Join(root, "plugins.json"), string(raw))
+		h.RunRead = func(_ context.Context, c Command) (CommandResult, error) {
+			if slices.Contains(c.Args, "rev-parse") {
+				return CommandResult{Stdout: []byte(strings.Repeat("a", 40))}, nil
+			}
+			return CommandResult{}, nil
+		}
+		h.Fetch = func(context.Context, string) ([]byte, error) {
+			return nil, errors.New("rate limited")
+		}
+		d := discoverHerdrPlugins(t.Context(), h, Scope{Locations: map[string][]string{"herdr-config": {filepath.Join(root, "config.toml")}}})
+		findings := checkHerdrPluginSources(t.Context(), h, Scope{}, d.Instances[0])
+		if len(findings) == 0 {
+			t.Fatal("expected finding")
+		}
+		var found bool
+		for _, fact := range findings[0].Evidence {
+			if fact.Label == "GitHub API status" {
+				found = true
+				if fact.Value != "Request failed or rate limited" {
+					t.Fatalf("unexpected API status value: %q", fact.Value)
+				}
+				if fact.Source != "HTTP response" {
+					t.Fatalf("unexpected API status source: %q", fact.Source)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("expected 'GitHub API status' fact in evidence on initial repo fetch error: %+v", findings[0].Evidence)
+		}
+	})
 }

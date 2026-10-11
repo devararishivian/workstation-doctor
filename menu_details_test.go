@@ -281,6 +281,74 @@ func TestComponentDetailMergesActionsIntoUpdateSection(t *testing.T) {
 	}
 }
 
+func TestDetailScreenMultiStepManualCommands(t *testing.T) {
+	key := doctor.FindingKey{IntegrationID: "herdr-plugins", CheckID: "herdr-plugins", InstanceID: "plugin-1"}
+	report := doctor.AuditReport{
+		Findings: []doctor.Finding{
+			{
+				Key:         key,
+				Outcome:     doctor.OutcomeAttention,
+				Explanation: "Plugin update available.",
+				Actions: []doctor.ActionProposal{
+					{
+						ID:     "update-plugin",
+						Label:  "Update Plugin",
+						Mode:   doctor.ActionManual,
+						Reason: "New git commit available",
+						Steps: []doctor.CommandStep{
+							{
+								Label:   "Pull latest changes",
+								Command: doctor.Command{Executable: "git", Args: []string{"pull", "origin", "main"}},
+							},
+							{
+								Label:   "Reload configuration",
+								Command: doctor.Command{Executable: "herdr", Args: []string{"server", "reload-config"}},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	detail := componentDetail(report, "herdr-plugins")
+
+	var updateSec *DetailSection
+	for i := range detail.Sections {
+		if detail.Sections[i].Heading == "Update Available" {
+			updateSec = &detail.Sections[i]
+			break
+		}
+	}
+	if updateSec == nil {
+		t.Fatalf("expected 'Update Available' section")
+	}
+
+	var step1Row, step2Row *DetailRow
+	for i := range updateSec.Rows {
+		if updateSec.Rows[i].Label == "Manual step 1 (Pull latest changes)" {
+			step1Row = &updateSec.Rows[i]
+		}
+		if updateSec.Rows[i].Label == "Manual step 2 (Reload configuration)" {
+			step2Row = &updateSec.Rows[i]
+		}
+	}
+
+	if step1Row == nil {
+		t.Fatalf("expected 'Manual step 1 (Pull latest changes)', rows: %+v", updateSec.Rows)
+	}
+	if step1Row.Value != "git pull origin main" {
+		t.Errorf("expected 'git pull origin main', got %q", step1Row.Value)
+	}
+
+	if step2Row == nil {
+		t.Fatalf("expected 'Manual step 2 (Reload configuration)', rows: %+v", updateSec.Rows)
+	}
+	if step2Row.Value != "herdr server reload-config" {
+		t.Errorf("expected 'herdr server reload-config', got %q", step2Row.Value)
+	}
+}
+
 func TestRenderDetailWithUpdateAvailable(t *testing.T) {
 	key := doctor.FindingKey{IntegrationID: "pi", CheckID: "pi", InstanceID: "inst-1"}
 	report := doctor.AuditReport{

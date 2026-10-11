@@ -225,6 +225,15 @@ func inspectGitResource(ctx context.Context, h *Host, _ Instance, r ResourceSour
 					releasePageURL = "https://github.com/" + parts[1] + "/" + parts[2] + "/releases/tag/" + remoteTag
 				}
 			}
+			if remoteTag == "" && (relErr != nil || tagsErr != nil) {
+				f.Evidence = append(f.Evidence, Fact{
+					State:      EvidenceKnown,
+					Label:      "GitHub API status",
+					Value:      "Request failed or rate limited",
+					Source:     "HTTP response",
+					ObservedAt: hostNow(h),
+				})
+			}
 		}
 
 		if remoteTag != "" {

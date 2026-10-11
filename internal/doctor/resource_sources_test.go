@@ -344,6 +344,12 @@ func TestGitUpdateUsesUpdateNotInstall(t *testing.T) {
 	if !strings.Contains(f.Actions[0].Steps[0].Command.Args[1], "git:github.com/obra/superpowers") {
 		t.Fatalf("expected git identity in args, got %v", f.Actions[0].Steps[0].Command.Args)
 	}
+	if f.Actions[0].Label != "Update superpowers via Pi" {
+		t.Fatalf("expected Label 'Update superpowers via Pi', got %q", f.Actions[0].Label)
+	}
+	if len(f.Actions[0].SideEffects) == 0 || !strings.Contains(f.Actions[0].SideEffects[0], "Pulls the latest version from the remote repository and updates the local checkout.") {
+		t.Fatalf("expected GitHub update side effect, got %v", f.Actions[0].SideEffects)
+	}
 }
 
 func TestNpmUpdateUsesUpdateNotInstall(t *testing.T) {
@@ -368,6 +374,36 @@ func TestNpmUpdateUsesUpdateNotInstall(t *testing.T) {
 	}
 	if !strings.Contains(f.Actions[0].Reason, "→") {
 		t.Fatalf("expected version transition in Reason, got %q", f.Actions[0].Reason)
+	}
+	if f.Actions[0].Label != "Update @foo/bar via Pi" {
+		t.Fatalf("expected Label 'Update @foo/bar via Pi', got %q", f.Actions[0].Label)
+	}
+	if len(f.Actions[0].SideEffects) == 0 || !strings.Contains(f.Actions[0].SideEffects[0], "Pulls the latest version from the npm registry and updates the local package.") {
+		t.Fatalf("expected npm update side effect, got %v", f.Actions[0].SideEffects)
+	}
+}
+
+func TestNpmUpdateFallsBackToInstallWhenPathMissing(t *testing.T) {
+	t.Parallel()
+	h := testHost(t)
+	makeExecutable(t, filepath.Join(h.Home, "pi"))
+	pkgPath := filepath.Join(h.Home, ".pi", "agent", "npm", "node_modules", "@foo", "bar")
+	resourceFile(t, filepath.Join(h.Home, ".pi", "agent", "settings.json"), `{"packages":["npm:@foo/bar"]}`)
+	resourceFile(t, filepath.Join(pkgPath, "package.json"), `{"name":"@foo/bar","version":"1.0.0"}`)
+	h.Fetch = func(context.Context, string) ([]byte, error) {
+		_ = os.RemoveAll(pkgPath)
+		return []byte(`{"version":"1.1.0"}`), nil
+	}
+	d := discoverPiPackages(t.Context(), h, Scope{})
+	if len(d.Instances) != 1 {
+		t.Fatalf("instances: %+v", d)
+	}
+	f := checkPiPackageSources(t.Context(), h, Scope{}, d.Instances[0])[0]
+	if len(f.Actions) != 1 {
+		t.Fatalf("expected 1 action proposal, got %d", len(f.Actions))
+	}
+	if f.Actions[0].Steps[0].Command.Args[0] != "install" {
+		t.Fatalf("expected 'install' command, got %q", f.Actions[0].Steps[0].Command.Args[0])
 	}
 }
 
@@ -503,4 +539,56 @@ func TestNpmResourceAddsAPIFailureFact(t *testing.T) {
 		t.Fatalf("expected 'npm API status' fact in evidence: %+v", f.Evidence)
 	}
 }
+
+func TestGitResourceReleaseFetchAddsAPIFailureFact(t *testing.T) {
+	t.Parallel()
+	h := testHost(t)
+	resourceFile(t, filepath.Join(h.Home, "git"), "synthetic; never execute")
+	if e := os.Chmod(filepath.Join(h.Home, "git"), 0o700); e != nil {
+		t.Fatal(e)
+	}
+	root := filepath.Join(h.Home, "repo")
+	resourceFile(t, filepath.Join(root, ".git", "config"), "[core]\nrepositoryformatversion = 0\n")
+	h.RunRead = func(_ context.Context, c Command) (CommandResult, error) {
+		last := strings.Join(c.Args, " ")
+		if strings.Contains(last, "rev-parse") {
+			return CommandResult{Stdout: []byte(strings.Repeat("a", 40))}, nil
+		}
+		if strings.Contains(last, "status") {
+			return CommandResult{Stdout: []byte("")}, nil
+		}
+		if strings.Contains(last, "symbolic-ref") {
+			return CommandResult{Stdout: []byte("main")}, nil
+		}
+		if strings.Contains(last, "describe") {
+			return CommandResult{Stdout: []byte("v1.0.0")}, nil
+		}
+		return CommandResult{ExitCode: 1}, errors.New("unsupported")
+	}
+	h.Fetch = func(context.Context, string) ([]byte, error) {
+		return nil, errors.New("rate limited")
+	}
+	source := ResourceSource{Kind: "git", Identity: "github.com/obra/superpowers", Path: root, Scope: "user"}
+	i := sourceInstance(h, "superpowers", source)
+	findings := checkSuperpowersSource(t.Context(), h, Scope{}, i)
+	if len(findings) == 0 {
+		t.Fatal("expected findings")
+	}
+	var found bool
+	for _, fact := range findings[0].Evidence {
+		if fact.Label == "GitHub API status" {
+			found = true
+			if fact.Value != "Request failed or rate limited" {
+				t.Fatalf("unexpected API status value: %q", fact.Value)
+			}
+			if fact.Source != "HTTP response" {
+				t.Fatalf("unexpected API status source: %q", fact.Source)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected 'GitHub API status' fact in evidence on release fetch error: %+v", findings[0].Evidence)
+	}
+}
+
 
