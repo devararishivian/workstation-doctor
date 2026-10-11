@@ -590,5 +590,3 @@ func TestGitResourceReleaseFetchAddsAPIFailureFact(t *testing.T) {
 		t.Fatalf("expected 'GitHub API status' fact in evidence on release fetch error: %+v", findings[0].Evidence)
 	}
 }
-
-
