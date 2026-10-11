@@ -14,12 +14,6 @@ import (
 	tui "github.com/grindlemire/go-tui"
 )
 
-type menuItem struct {
-	key      string
-	shortcut string
-	label    string
-}
-
 type doctorApp struct {
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -31,7 +25,6 @@ type doctorApp struct {
 
 	// UI state
 	mode           *tui.State[string]
-	selectedMenu   *tui.State[int]
 	selectedResult *tui.State[int]
 	scrollOffset   *tui.State[int]
 	statusMsg      *tui.State[string]
@@ -51,8 +44,6 @@ type doctorApp struct {
 	migrationResult   *store.MigrationResult
 	currentGeneration uint64
 	auditCancel       context.CancelFunc
-
-	items []menuItem
 }
 
 var (
@@ -68,8 +59,7 @@ func newDoctorApp(ctx context.Context, service *app.Service) *doctorApp {
 		ctx:            ctx,
 		cancel:         cancel,
 		service:        service,
-		mode:           tui.NewState("menu"),
-		selectedMenu:   tui.NewState(0),
+		mode:           tui.NewState("checking"),
 		selectedResult: tui.NewState(0),
 		scrollOffset:   tui.NewState(0),
 		statusMsg:      tui.NewState(""),
@@ -79,30 +69,25 @@ func newDoctorApp(ctx context.Context, service *app.Service) *doctorApp {
 		activeDetail:   tui.NewState(""),
 		currentDetail:  tui.NewState(Detail{}),
 		historyActions: tui.NewState([]store.ActionRecord{}),
-		items: []menuItem{
-			{key: "check", shortcut: "1", label: "Check status (read-only)"},
-			{key: "manual", shortcut: "2", label: "Show ordered manual steps"},
-			{key: "fix", shortcut: "3", label: "Run automatic fix"},
-			{key: "history", shortcut: "4", label: "Show history"},
-			{key: "quit", shortcut: "0", label: "Quit"},
-		},
 	}
 	return d
 }
 
 func (d *doctorApp) BindApp(app *tui.App) {
 	d.app = app
-	d.mode.BindApp(app)
-	d.selectedMenu.BindApp(app)
-	d.selectedResult.BindApp(app)
-	d.scrollOffset.BindApp(app)
-	d.statusMsg.BindApp(app)
-	d.lastSummary.BindApp(app)
-	d.tickCount.BindApp(app)
-	d.report.BindApp(app)
-	d.activeDetail.BindApp(app)
-	d.currentDetail.BindApp(app)
-	d.historyActions.BindApp(app)
+	if app != nil {
+		d.mode.BindApp(app)
+		d.selectedResult.BindApp(app)
+		d.scrollOffset.BindApp(app)
+		d.statusMsg.BindApp(app)
+		d.lastSummary.BindApp(app)
+		d.tickCount.BindApp(app)
+		d.report.BindApp(app)
+		d.activeDetail.BindApp(app)
+		d.currentDetail.BindApp(app)
+		d.historyActions.BindApp(app)
+	}
+	go d.startAudit()
 }
 
 func (d *doctorApp) queueUpdate(fn func()) {
@@ -127,7 +112,7 @@ func (d *doctorApp) startAudit() {
 	d.auditCancel = cancel
 	d.mu.Unlock()
 
-	d.mode.Set("running")
+	d.mode.Set("checking")
 	d.statusMsg.Set("Running workstation audit checks...")
 
 	go func() {
@@ -379,7 +364,7 @@ func (d *doctorApp) previewMigration(source, destination string) {
 func (d *doctorApp) applyMigration(confirmed bool) {
 	if !confirmed || d.migrationPreview == nil || d.service == nil {
 		d.migrationPreview = nil
-		d.mode.Set("menu")
+		d.mode.Set("results")
 		return
 	}
 	prev := *d.migrationPreview
@@ -428,31 +413,6 @@ func (d *doctorApp) stop() {
 
 	if d.app != nil {
 		d.app.Stop()
-	}
-}
-
-func (d *doctorApp) selectNext() {
-	d.selectedMenu.Update(func(v int) int {
-		if v >= len(d.items)-1 {
-			return 0
-		}
-		return v + 1
-	})
-}
-
-func (d *doctorApp) selectPrev() {
-	d.selectedMenu.Update(func(v int) int {
-		if v <= 0 {
-			return len(d.items) - 1
-		}
-		return v - 1
-	})
-}
-
-func (d *doctorApp) activateSelected() {
-	idx := d.selectedMenu.Get()
-	if idx >= 0 && idx < len(d.items) {
-		d.runAction(d.items[idx].key)
 	}
 }
 

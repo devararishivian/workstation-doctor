@@ -189,10 +189,6 @@ func TestLiveHostDashboard(t *testing.T) {
 
 	app := newDoctorApp(t.Context(), nil)
 	app.report.Set(rep)
-	elemManual := app.renderManual()
-	if elemManual == nil {
-		t.Fatal("renderManual returned nil")
-	}
 
 	elemResults := app.renderResults()
 	if elemResults == nil {

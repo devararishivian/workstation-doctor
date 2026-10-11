@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -14,6 +13,8 @@ import (
 	"github.com/devararishivian/workstation-doctor/internal/app"
 	"github.com/devararishivian/workstation-doctor/internal/doctor"
 	"github.com/devararishivian/workstation-doctor/internal/store"
+
+	tui "github.com/grindlemire/go-tui"
 )
 
 func createLegacyHistory(t *testing.T, path string) {
@@ -364,7 +365,7 @@ func TestMenuDeclineNoHistory(t *testing.T) {
 	d.prepareAction(key, "fix-1")
 	d.declinePreparedAction()
 
-	if d.mode.Get() != "results" && d.mode.Get() != "menu" {
+	if d.mode.Get() != "results" {
 		t.Fatalf("mode after decline = %q", d.mode.Get())
 	}
 	if historyStartCalls.Load() != 0 || commandCalls.Load() != 0 {
@@ -613,7 +614,7 @@ func TestMenuMigrationPreviewConsent(t *testing.T) {
 
 	// Declining migration does not import
 	d.applyMigration(false)
-	if d.mode.Get() != "menu" && d.mode.Get() != "history" {
+	if d.mode.Get() != "results" {
 		t.Fatalf("mode after decline = %q", d.mode.Get())
 	}
 
@@ -706,13 +707,7 @@ func TestDashboardWithCompletelyEmptyHost(t *testing.T) {
 		}
 	}
 
-	// 3. Manual view does not panic
-	elemManual := d.renderManual()
-	if elemManual == nil {
-		t.Fatal("renderManual returned nil")
-	}
-
-	// 4. Automatic fix does not panic and shows notice
+	// 3. Automatic fix does not panic and shows notice
 	d.triggerAutomaticFix()
 	if d.mode.Get() != "no_fixes" {
 		t.Fatalf("expected no_fixes mode, got %s", d.mode.Get())
@@ -980,48 +975,6 @@ func TestMenuBatchAutomaticFixMultipleComponents(t *testing.T) {
 	}
 }
 
-func TestMenuManualStepsScrollAndWindowing(t *testing.T) {
-	d := newDoctorApp(t.Context(), nil)
-	var findings []doctor.Finding
-	for i := 1; i <= 6; i++ {
-		key := doctor.FindingKey{IntegrationID: "fixture", CheckID: fmt.Sprintf("check-%d", i), InstanceID: fmt.Sprintf("inst-%d", i)}
-		prop := doctor.ActionProposal{
-			ID:    fmt.Sprintf("fix-%d", i),
-			Key:   key,
-			Mode:  doctor.ActionManual,
-			Label: fmt.Sprintf("Fix step %d", i),
-			Steps: []doctor.CommandStep{{Label: fmt.Sprintf("run-cmd-%d", i), Command: doctor.Command{Executable: "/bin/echo", Args: []string{fmt.Sprint(i)}}}},
-		}
-		findings = append(findings, doctor.Finding{
-			Key:     key,
-			Outcome: doctor.OutcomeAttention,
-			Actions: []doctor.ActionProposal{prop},
-		})
-	}
-	d.report.Set(doctor.AuditReport{Findings: findings})
-
-	// Render page 1
-	d.scrollOffset.Set(0)
-	elem1 := d.renderManual()
-	if elem1 == nil {
-		t.Fatal("renderManual returned nil for page 1")
-	}
-
-	// Render page 2 (scrolled)
-	d.scrollOffset.Set(2)
-	elem2 := d.renderManual()
-	if elem2 == nil {
-		t.Fatal("renderManual returned nil for page 2")
-	}
-
-	// Beyond length clamps safely
-	d.scrollOffset.Set(999)
-	elemClamped := d.renderManual()
-	if elemClamped == nil {
-		t.Fatal("renderManual returned nil for clamped page")
-	}
-}
-
 func TestMenuDeduplicatesIdenticalCommands(t *testing.T) {
 	keyTool := doctor.FindingKey{IntegrationID: "opencode", CheckID: "opencode", InstanceID: "inst-1"}
 	keyNpm := doctor.FindingKey{IntegrationID: "npm-outdated-g", CheckID: "npm-outdated-g", InstanceID: "inst-2"}
@@ -1047,13 +1000,132 @@ func TestMenuDeduplicatesIdenticalCommands(t *testing.T) {
 		},
 	})
 
-	elemManual := d.renderManual()
-	if elemManual == nil {
-		t.Fatal("renderManual returned nil")
-	}
-
 	elemResults := d.renderResults()
 	if elemResults == nil {
 		t.Fatal("renderResults returned nil")
+	}
+}
+
+func TestAppStartsAuditOnBind(t *testing.T) {
+	service, _ := syntheticServiceForMenu(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	d := newDoctorApp(ctx, service)
+	if d.mode.Get() != "checking" {
+		t.Fatalf("expected initial mode 'checking', got %q", d.mode.Get())
+	}
+
+	d.BindApp(nil)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if d.mode.Get() == "results" {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if d.mode.Get() != "results" {
+		t.Fatalf("expected mode 'results' after bind audit completes, got %q", d.mode.Get())
+	}
+}
+
+func TestResultsEscQuitsNotMenu(t *testing.T) {
+	service, _ := syntheticServiceForMenu(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	d := newDoctorApp(ctx, service)
+	d.mode.Set("results")
+
+	km := d.KeyMap()
+	var escHandler func(tui.KeyEvent)
+	for _, b := range km {
+		if b.Pattern.Key == tui.KeyEscape {
+			escHandler = b.Handler
+			break
+		}
+	}
+	if escHandler == nil {
+		t.Fatal("no Esc key handler found in results mode")
+	}
+	escHandler(tui.KeyEvent{Key: tui.KeyEscape})
+
+	if d.mode.Get() == "menu" {
+		t.Fatalf("expected Esc in results to quit, but mode transitioned to %q", d.mode.Get())
+	}
+	if d.ctx.Err() == nil {
+		t.Fatal("expected d.stop() to be called on Esc in results, canceling app context")
+	}
+}
+
+func TestResultsBQuitsNotMenu(t *testing.T) {
+	service, _ := syntheticServiceForMenu(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	d := newDoctorApp(ctx, service)
+	d.mode.Set("results")
+
+	km := d.KeyMap()
+	var bHandler func(tui.KeyEvent)
+	for _, b := range km {
+		if b.Pattern.Rune == 'b' {
+			bHandler = b.Handler
+			break
+		}
+	}
+	if bHandler == nil {
+		t.Fatal("no 'b' key handler found in results mode")
+	}
+	bHandler(tui.KeyEvent{Rune: 'b'})
+
+	if d.mode.Get() == "menu" {
+		t.Fatalf("expected 'b' in results to quit, but mode transitioned to %q", d.mode.Get())
+	}
+	if d.ctx.Err() == nil {
+		t.Fatal("expected d.stop() to be called on 'b' in results, canceling app context")
+	}
+}
+
+func TestResultsKeyBindings(t *testing.T) {
+	service, _ := syntheticServiceForMenu(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	d := newDoctorApp(ctx, service)
+	d.mode.Set("results")
+
+	km := d.KeyMap()
+	hasF, hasR, hasH, has2, has3 := false, false, false, false, false
+	for _, b := range km {
+		switch b.Pattern.Rune {
+		case 'f':
+			hasF = true
+		case 'r':
+			hasR = true
+		case 'h':
+			hasH = true
+		case '2':
+			has2 = true
+		case '3':
+			has3 = true
+		}
+	}
+	if !hasF {
+		t.Error("expected 'f' key binding in results mode")
+	}
+	if !hasR {
+		t.Error("expected 'r' key binding in results mode")
+	}
+	if !hasH {
+		t.Error("expected 'h' key binding in results mode")
+	}
+	if has2 {
+		t.Error("key '2' should be removed from results mode")
+	}
+	if has3 {
+		t.Error("key '3' should be replaced by 'f' in results mode")
 	}
 }

@@ -28,7 +28,7 @@ func (d *doctorApp) Watchers() []tui.Watcher {
 	return []tui.Watcher{
 		tui.OnTimer(120*time.Millisecond, func() {
 			currentMode := d.mode.Get()
-			if currentMode == "running" || currentMode == "fixing" {
+			if currentMode == "running" || currentMode == "checking" || currentMode == "fixing" {
 				d.tickCount.Update(func(v int) int { return (v + 1) % len(spinnerFrames) })
 			}
 		}),
@@ -37,29 +37,15 @@ func (d *doctorApp) Watchers() []tui.Watcher {
 
 func (d *doctorApp) KeyMap() tui.KeyMap {
 	switch d.mode.Get() {
-	case "menu":
-		return tui.KeyMap{
-			tui.On(tui.KeyDown, func(_ tui.KeyEvent) { d.selectNext() }),
-			tui.On(tui.Rune('j'), func(_ tui.KeyEvent) { d.selectNext() }),
-			tui.On(tui.KeyUp, func(_ tui.KeyEvent) { d.selectPrev() }),
-			tui.On(tui.Rune('k'), func(_ tui.KeyEvent) { d.selectPrev() }),
-			tui.On(tui.KeyEnter, func(_ tui.KeyEvent) { d.activateSelected() }),
-			tui.On(tui.Rune('1'), func(_ tui.KeyEvent) { d.runAction("check") }),
-			tui.On(tui.Rune('2'), func(_ tui.KeyEvent) { d.runAction("manual") }),
-			tui.On(tui.Rune('3'), func(_ tui.KeyEvent) { d.runAction("fix") }),
-			tui.On(tui.Rune('4'), func(_ tui.KeyEvent) { d.runAction("history") }),
-			tui.On(tui.Rune('0'), func(_ tui.KeyEvent) { d.stop() }),
-			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
-			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.stop() }),
-		}
 	case "results":
 		return tui.KeyMap{
-			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.mode.Set("menu") }),
-			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.mode.Set("menu") }),
+			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.stop() }),
+			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.stop() }),
 			tui.On(tui.KeyEnter, func(_ tui.KeyEvent) { d.openSelectedComponentDetail() }),
 			tui.On(tui.Rune('d'), func(_ tui.KeyEvent) { d.openSelectedComponentDetail() }),
-			tui.On(tui.Rune('2'), func(_ tui.KeyEvent) { d.runAction("manual") }),
-			tui.On(tui.Rune('3'), func(_ tui.KeyEvent) { d.runAction("fix") }),
+			tui.On(tui.Rune('f'), func(_ tui.KeyEvent) { d.runAction("fix") }),
+			tui.On(tui.Rune('r'), func(_ tui.KeyEvent) { d.startAudit() }),
+			tui.On(tui.Rune('h'), func(_ tui.KeyEvent) { d.runAction("history") }),
 			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
 			tui.On(tui.KeyDown, func(_ tui.KeyEvent) {
 				d.selectedResult.Update(func(v int) int {
@@ -96,33 +82,6 @@ func (d *doctorApp) KeyMap() tui.KeyMap {
 				})
 			}),
 		}
-	case "manual", "fix_done":
-		return tui.KeyMap{
-			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.mode.Set("menu") }),
-			tui.On(tui.KeyEnter, func(_ tui.KeyEvent) { d.mode.Set("menu") }),
-			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.mode.Set("menu") }),
-			tui.On(tui.Rune('m'), func(_ tui.KeyEvent) { d.mode.Set("menu") }),
-			tui.On(tui.Rune('3'), func(_ tui.KeyEvent) { d.runAction("fix") }),
-			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
-			tui.On(tui.KeyDown, func(_ tui.KeyEvent) { d.scrollOffset.Update(func(v int) int { return v + 1 }) }),
-			tui.On(tui.Rune('j'), func(_ tui.KeyEvent) { d.scrollOffset.Update(func(v int) int { return v + 1 }) }),
-			tui.On(tui.KeyUp, func(_ tui.KeyEvent) {
-				d.scrollOffset.Update(func(v int) int {
-					if v > 0 {
-						return v - 1
-					}
-					return 0
-				})
-			}),
-			tui.On(tui.Rune('k'), func(_ tui.KeyEvent) {
-				d.scrollOffset.Update(func(v int) int {
-					if v > 0 {
-						return v - 1
-					}
-					return 0
-				})
-			}),
-		}
 	case "detail":
 		return tui.KeyMap{
 			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.mode.Set("results") }),
@@ -130,7 +89,6 @@ func (d *doctorApp) KeyMap() tui.KeyMap {
 			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.mode.Set("results") }),
 			tui.On(tui.Rune('3'), func(_ tui.KeyEvent) { d.prepareFirstAction() }),
 			tui.On(tui.Rune('p'), func(_ tui.KeyEvent) { d.prepareFirstAction() }),
-			tui.On(tui.Rune('2'), func(_ tui.KeyEvent) { d.runAction("manual") }),
 			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
 			tui.On(tui.KeyDown, func(_ tui.KeyEvent) { d.scrollOffset.Update(func(v int) int { return v + 1 }) }),
 			tui.On(tui.Rune('j'), func(_ tui.KeyEvent) { d.scrollOffset.Update(func(v int) int { return v + 1 }) }),
@@ -206,9 +164,9 @@ func (d *doctorApp) KeyMap() tui.KeyMap {
 		}
 	case "history":
 		return tui.KeyMap{
-			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.mode.Set("menu") }),
-			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.mode.Set("menu") }),
-			tui.On(tui.Rune('m'), func(_ tui.KeyEvent) { d.mode.Set("menu") }),
+			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.mode.Set("results") }),
+			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.mode.Set("results") }),
+			tui.On(tui.Rune('m'), func(_ tui.KeyEvent) { d.mode.Set("results") }),
 			tui.On(tui.KeyEnter, func(_ tui.KeyEvent) { d.openSelectedHistoryDetail() }),
 			tui.On(tui.Rune('d'), func(_ tui.KeyEvent) { d.openSelectedHistoryDetail() }),
 			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
@@ -284,18 +242,17 @@ func (d *doctorApp) KeyMap() tui.KeyMap {
 		}
 	case "migration_done":
 		return tui.KeyMap{
-			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.mode.Set("menu") }),
-			tui.On(tui.KeyEnter, func(_ tui.KeyEvent) { d.mode.Set("menu") }),
-			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.mode.Set("menu") }),
+			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.mode.Set("results") }),
+			tui.On(tui.KeyEnter, func(_ tui.KeyEvent) { d.mode.Set("results") }),
+			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.mode.Set("results") }),
 			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
 		}
 	case "no_fixes":
 		return tui.KeyMap{
-			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.mode.Set("menu") }),
-			tui.On(tui.KeyEnter, func(_ tui.KeyEvent) { d.mode.Set("menu") }),
-			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.mode.Set("menu") }),
-			tui.On(tui.Rune('m'), func(_ tui.KeyEvent) { d.mode.Set("menu") }),
-			tui.On(tui.Rune('2'), func(_ tui.KeyEvent) { d.runAction("manual") }),
+			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) { d.mode.Set("results") }),
+			tui.On(tui.KeyEnter, func(_ tui.KeyEvent) { d.mode.Set("results") }),
+			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.mode.Set("results") }),
+			tui.On(tui.Rune('m'), func(_ tui.KeyEvent) { d.mode.Set("results") }),
 			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
 		}
 	default:
@@ -310,29 +267,10 @@ func (d *doctorApp) runAction(key string) {
 	switch key {
 	case "check":
 		d.startAudit()
-	case "manual":
-		rep := d.report.Get()
-		if len(rep.Findings) == 0 {
-			d.mode.Set("running")
-			d.statusMsg.Set("Running audit to collect manual steps...")
-			go func() {
-				if d.service != nil {
-					rep = d.service.Audit(d.ctx)
-				}
-				d.queueUpdate(func() {
-					d.report.Set(rep)
-					d.scrollOffset.Set(0)
-					d.mode.Set("manual")
-				})
-			}()
-			return
-		}
-		d.scrollOffset.Set(0)
-		d.mode.Set("manual")
 	case "fix":
 		rep := d.report.Get()
 		if len(rep.Findings) == 0 {
-			d.mode.Set("running")
+			d.mode.Set("checking")
 			d.statusMsg.Set("Running audit to find pending fixes...")
 			go func() {
 				if d.service != nil {
