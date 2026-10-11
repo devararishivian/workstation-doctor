@@ -932,13 +932,13 @@ func TestMenuBatchAutomaticFixMultipleComponents(t *testing.T) {
 	}
 
 	// 2. Component filter: only pi-packages
-	d.prepareAutomaticFixes("pi-packages")
+	d.prepareAutomaticFixes([]string{"pi-packages"})
 	if len(d.preparedActions) != 2 {
 		t.Fatalf("expected 2 pi-packages actions, got %d", len(d.preparedActions))
 	}
 
 	// 3. Component filter: only herdr-plugins
-	d.prepareAutomaticFixes("herdr-plugins")
+	d.prepareAutomaticFixes([]string{"herdr-plugins"})
 	if len(d.preparedActions) != 1 {
 		t.Fatalf("expected 1 herdr-plugins action, got %d", len(d.preparedActions))
 	}
@@ -1165,4 +1165,349 @@ func TestDetailKeyBindings(t *testing.T) {
 		t.Error("key '2' should not exist in detail mode")
 	}
 }
+
+func TestSelectFixesPopulatesFromReport(t *testing.T) {
+	keyA := doctor.FindingKey{IntegrationID: "comp-a", CheckID: "comp-a", InstanceID: "inst-a"}
+	keyB := doctor.FindingKey{IntegrationID: "comp-b", CheckID: "comp-b", InstanceID: "inst-b"}
+
+	propA := doctor.ActionProposal{
+		ID:    "fix-a",
+		Key:   keyA,
+		Mode:  doctor.ActionAutomatic,
+		Label: "Upgrade Component A",
+		Steps: []doctor.CommandStep{{Label: "Run upgrade A", Command: doctor.Command{Executable: "/bin/echo", Args: []string{"upgrade-a"}}}},
+	}
+	propB := doctor.ActionProposal{
+		ID:    "fix-b",
+		Key:   keyB,
+		Mode:  doctor.ActionAutomatic,
+		Label: "Upgrade Component B",
+		Steps: []doctor.CommandStep{{Label: "Run upgrade B", Command: doctor.Command{Executable: "/bin/echo", Args: []string{"upgrade-b"}}}},
+	}
+
+	d := newDoctorApp(t.Context(), nil)
+	d.report.Set(doctor.AuditReport{
+		Findings: []doctor.Finding{
+			{Key: keyA, Outcome: doctor.OutcomeAttention, Actions: []doctor.ActionProposal{propA}},
+			{Key: keyB, Outcome: doctor.OutcomeAttention, Actions: []doctor.ActionProposal{propB}},
+		},
+	})
+
+	d.enterSelectFixes()
+
+	if d.mode.Get() != "select_fixes" {
+		t.Fatalf("expected mode select_fixes, got %q", d.mode.Get())
+	}
+	items := d.selectFixItems.Get()
+	if len(items) != 2 {
+		t.Fatalf("expected 2 fix candidates, got %d", len(items))
+	}
+	for i, it := range items {
+		if !it.Selected {
+			t.Errorf("expected item %d to be selected by default", i)
+		}
+	}
+	if items[0].Component != "comp-a" || items[0].ActionID != "fix-a" {
+		t.Errorf("unexpected item 0: %+v", items[0])
+	}
+	if items[1].Component != "comp-b" || items[1].ActionID != "fix-b" {
+		t.Errorf("unexpected item 1: %+v", items[1])
+	}
+}
+
+func TestSelectFixesToggle(t *testing.T) {
+	keyA := doctor.FindingKey{IntegrationID: "comp-a", CheckID: "comp-a", InstanceID: "inst-a"}
+	keyB := doctor.FindingKey{IntegrationID: "comp-b", CheckID: "comp-b", InstanceID: "inst-b"}
+
+	propA := doctor.ActionProposal{
+		ID:    "fix-a",
+		Key:   keyA,
+		Mode:  doctor.ActionAutomatic,
+		Label: "Upgrade Component A",
+		Steps: []doctor.CommandStep{{Label: "Run upgrade A", Command: doctor.Command{Executable: "/bin/echo", Args: []string{"upgrade-a"}}}},
+	}
+	propB := doctor.ActionProposal{
+		ID:    "fix-b",
+		Key:   keyB,
+		Mode:  doctor.ActionAutomatic,
+		Label: "Upgrade Component B",
+		Steps: []doctor.CommandStep{{Label: "Run upgrade B", Command: doctor.Command{Executable: "/bin/echo", Args: []string{"upgrade-b"}}}},
+	}
+
+	d := newDoctorApp(t.Context(), nil)
+	d.report.Set(doctor.AuditReport{
+		Findings: []doctor.Finding{
+			{Key: keyA, Outcome: doctor.OutcomeAttention, Actions: []doctor.ActionProposal{propA}},
+			{Key: keyB, Outcome: doctor.OutcomeAttention, Actions: []doctor.ActionProposal{propB}},
+		},
+	})
+
+	d.enterSelectFixes()
+	if len(d.selectFixItems.Get()) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(d.selectFixItems.Get()))
+	}
+
+	d.toggleFixItem(0)
+	items := d.selectFixItems.Get()
+	if items[0].Selected {
+		t.Errorf("expected item 0 to be deselected after toggle")
+	}
+	if !items[1].Selected {
+		t.Errorf("expected item 1 to remain selected")
+	}
+
+	d.selectAllFixes()
+	items = d.selectFixItems.Get()
+	if !items[0].Selected || !items[1].Selected {
+		t.Errorf("expected all items selected after selectAllFixes")
+	}
+
+	d.deselectAllFixes()
+	items = d.selectFixItems.Get()
+	if items[0].Selected || items[1].Selected {
+		t.Errorf("expected all items deselected after deselectAllFixes")
+	}
+}
+
+func TestSelectFixesWithNoAutoActionsShowsResult(t *testing.T) {
+	key := doctor.FindingKey{IntegrationID: "comp-manual", CheckID: "comp-manual", InstanceID: "inst"}
+	prop := doctor.ActionProposal{
+		ID:    "manual-fix",
+		Key:   key,
+		Mode:  doctor.ActionManual,
+		Label: "Manual Fix Required",
+	}
+
+	d := newDoctorApp(t.Context(), nil)
+	d.report.Set(doctor.AuditReport{
+		Findings: []doctor.Finding{
+			{Key: key, Outcome: doctor.OutcomeAttention, Actions: []doctor.ActionProposal{prop}},
+		},
+	})
+
+	d.enterSelectFixes()
+
+	if d.mode.Get() != "no_fixes" {
+		t.Fatalf("expected mode no_fixes, got %q", d.mode.Get())
+	}
+}
+
+func TestSelectFixesConfirm(t *testing.T) {
+	keyPi := doctor.FindingKey{IntegrationID: "pi-packages", CheckID: "pi-packages", InstanceID: "pkg-1"}
+	keyHerdr := doctor.FindingKey{IntegrationID: "herdr-plugins", CheckID: "herdr-plugins", InstanceID: "plugin-1"}
+
+	propPi := doctor.ActionProposal{
+		ID: "update-pkg-1", Key: keyPi, Mode: doctor.ActionAutomatic,
+		Label: "Update pkg-1", Reason: "Outdated pkg-1", TargetIDs: []string{"pkg-1"},
+		TargetVersion:       doctor.Fact{State: doctor.EvidenceKnown, Value: "2.0"},
+		Steps:               []doctor.CommandStep{{Label: "Run pi install pkg-1", Command: doctor.Command{Executable: "/usr/bin/true", Args: []string{"install", "pkg-1"}, Dir: "/tmp"}}},
+		Preconditions:       []doctor.Fact{{State: doctor.EvidenceKnown, Label: "installed", Value: "1.0"}},
+		VerificationCheckID: "pi-packages",
+	}
+	propHerdr := doctor.ActionProposal{
+		ID: "update-plugin-1", Key: keyHerdr, Mode: doctor.ActionAutomatic,
+		Label: "Update plugin-1", Reason: "Outdated plugin-1", TargetIDs: []string{"plugin-1"},
+		TargetVersion:       doctor.Fact{State: doctor.EvidenceKnown, Value: "commit-2"},
+		Steps:               []doctor.CommandStep{{Label: "Run herdr install plugin-1", Command: doctor.Command{Executable: "/usr/bin/true", Args: []string{"install", "plugin-1"}, Dir: "/tmp"}}},
+		Preconditions:       []doctor.Fact{{State: doctor.EvidenceKnown, Label: "installed", Value: "commit-1"}},
+		VerificationCheckID: "herdr-plugins",
+	}
+
+	engine, err := doctor.NewAuditEngine([]doctor.Definition{
+		{
+			Integration: doctor.Integration{ID: "pi-packages", Name: "Pi Packages"},
+			Discover: func(context.Context, *doctor.Host, doctor.Scope) doctor.Discovery {
+				return doctor.Discovery{Availability: doctor.AvailabilityPresent, Instances: []doctor.Instance{
+					{ID: "pkg-1", IntegrationID: "pi-packages", Availability: doctor.AvailabilityPresent, Version: doctor.Fact{State: doctor.EvidenceKnown, Value: "1.0"}},
+				}}
+			},
+			Checks: []doctor.CheckDefinition{
+				{ID: "pi-packages", Name: "Pi", Question: "Pi?", Order: 1, Evaluate: func(_ context.Context, _ *doctor.Host, _ doctor.Scope, _ doctor.Instance) []doctor.Finding {
+					return []doctor.Finding{{Key: keyPi, Outcome: doctor.OutcomeAttention, Actions: []doctor.ActionProposal{propPi}}}
+				}},
+			},
+		},
+		{
+			Integration: doctor.Integration{ID: "herdr-plugins", Name: "Herdr Plugins"},
+			Discover: func(context.Context, *doctor.Host, doctor.Scope) doctor.Discovery {
+				return doctor.Discovery{Availability: doctor.AvailabilityPresent, Instances: []doctor.Instance{
+					{ID: "plugin-1", IntegrationID: "herdr-plugins", Availability: doctor.AvailabilityPresent, Version: doctor.Fact{State: doctor.EvidenceKnown, Value: "commit-1"}},
+				}}
+			},
+			Checks: []doctor.CheckDefinition{
+				{ID: "herdr-plugins", Name: "Herdr", Question: "Herdr?", Order: 2, Evaluate: func(context.Context, *doctor.Host, doctor.Scope, doctor.Instance) []doctor.Finding {
+					return []doctor.Finding{{Key: keyHerdr, Outcome: doctor.OutcomeAttention, Actions: []doctor.ActionProposal{propHerdr}}}
+				}},
+			},
+		},
+	}, doctor.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	host, err := doctor.NewHost(doctor.Scope{}, doctor.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := app.NewService(engine, host, doctor.Scope{}, app.Options{
+		StateDir: t.TempDir(),
+		DBPath:   filepath.Join(t.TempDir(), "h", "history.db"),
+		Policy:   store.DefaultPolicy(),
+	})
+
+	d := newDoctorApp(t.Context(), service)
+	d.report.Set(doctor.AuditReport{
+		Findings: []doctor.Finding{
+			{Key: keyPi, Outcome: doctor.OutcomeAttention, Actions: []doctor.ActionProposal{propPi}},
+			{Key: keyHerdr, Outcome: doctor.OutcomeAttention, Actions: []doctor.ActionProposal{propHerdr}},
+		},
+	})
+
+	d.enterSelectFixes()
+	if len(d.selectFixItems.Get()) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(d.selectFixItems.Get()))
+	}
+
+	// Deselect item 0 (pi-packages), keep item 1 (herdr-plugins)
+	d.toggleFixItem(0)
+	d.confirmSelectedFixes()
+
+	if d.mode.Get() != "preview_action" {
+		t.Fatalf("expected mode preview_action, got %q", d.mode.Get())
+	}
+	if len(d.preparedActions) != 1 {
+		t.Fatalf("expected 1 prepared action, got %d", len(d.preparedActions))
+	}
+	if d.preparedActions[0].Preview().Label != "Update plugin-1" {
+		t.Fatalf("expected herdr action, got %q", d.preparedActions[0].Preview().Label)
+	}
+
+	// Now re-enter, deselect all, and confirm
+	d.enterSelectFixes()
+	d.deselectAllFixes()
+	d.confirmSelectedFixes()
+	if d.mode.Get() != "no_fixes" {
+		t.Fatalf("expected mode no_fixes when nothing selected, got %q", d.mode.Get())
+	}
+}
+
+func TestRenderSelectFixes(t *testing.T) {
+	keyA := doctor.FindingKey{IntegrationID: "comp-a", CheckID: "comp-a", InstanceID: "inst-a"}
+	propA := doctor.ActionProposal{
+		ID:    "fix-a",
+		Key:   keyA,
+		Mode:  doctor.ActionAutomatic,
+		Label: "Upgrade Component A",
+		Steps: []doctor.CommandStep{{Label: "Run upgrade A", Command: doctor.Command{Executable: "/bin/echo", Args: []string{"upgrade-a"}}}},
+	}
+
+	d := newDoctorApp(t.Context(), nil)
+	d.report.Set(doctor.AuditReport{
+		Findings: []doctor.Finding{
+			{Key: keyA, Outcome: doctor.OutcomeAttention, Actions: []doctor.ActionProposal{propA}},
+		},
+	})
+	d.enterSelectFixes()
+
+	elem := d.renderSelectFixes()
+	if elem == nil {
+		t.Fatal("renderSelectFixes returned nil element")
+	}
+
+	renderedRoot := d.Render(nil)
+	if renderedRoot == nil {
+		t.Fatal("Render returned nil in select_fixes mode")
+	}
+}
+
+func TestSelectFixesKeyMap(t *testing.T) {
+	keyA := doctor.FindingKey{IntegrationID: "comp-a", CheckID: "comp-a", InstanceID: "inst-a"}
+	keyB := doctor.FindingKey{IntegrationID: "comp-b", CheckID: "comp-b", InstanceID: "inst-b"}
+	propA := doctor.ActionProposal{
+		ID:    "fix-a",
+		Key:   keyA,
+		Mode:  doctor.ActionAutomatic,
+		Label: "Upgrade A",
+	}
+	propB := doctor.ActionProposal{
+		ID:    "fix-b",
+		Key:   keyB,
+		Mode:  doctor.ActionAutomatic,
+		Label: "Upgrade B",
+	}
+
+	d := newDoctorApp(t.Context(), nil)
+	d.report.Set(doctor.AuditReport{
+		Findings: []doctor.Finding{
+			{Key: keyA, Outcome: doctor.OutcomeAttention, Actions: []doctor.ActionProposal{propA}},
+			{Key: keyB, Outcome: doctor.OutcomeAttention, Actions: []doctor.ActionProposal{propB}},
+		},
+	})
+
+	// In results mode, pressing 'f' enters select_fixes
+	d.mode.Set("results")
+	kmResults := d.KeyMap()
+	hasF := false
+	for _, b := range kmResults {
+		if b.Pattern.Rune == 'f' {
+			hasF = true
+			b.Handler(tui.KeyEvent{Rune: 'f'})
+			break
+		}
+	}
+	if !hasF {
+		t.Fatal("expected 'f' key binding in results mode")
+	}
+	if d.mode.Get() != "select_fixes" {
+		t.Fatalf("expected 'f' key in results mode to transition to select_fixes, got %s", d.mode.Get())
+	}
+
+	// In select_fixes mode, test keybindings
+	km := d.KeyMap()
+	keyFound := map[string]bool{}
+	for _, b := range km {
+		if b.Pattern.Rune == ' ' {
+			keyFound["space"] = true
+		}
+		if b.Pattern.Rune == 'a' {
+			keyFound["a"] = true
+		}
+		if b.Pattern.Rune == 'n' {
+			keyFound["n"] = true
+		}
+		if b.Pattern.Rune == 'b' {
+			keyFound["b"] = true
+		}
+		if b.Pattern.Rune == 'q' {
+			keyFound["q"] = true
+		}
+		if b.Pattern.Rune == 'j' {
+			keyFound["j"] = true
+		}
+		if b.Pattern.Rune == 'k' {
+			keyFound["k"] = true
+		}
+		if b.Pattern.Key == tui.KeyEnter {
+			keyFound["enter"] = true
+		}
+		if b.Pattern.Key == tui.KeyEscape {
+			keyFound["escape"] = true
+		}
+		if b.Pattern.Key == tui.KeyDown {
+			keyFound["down"] = true
+		}
+		if b.Pattern.Key == tui.KeyUp {
+			keyFound["up"] = true
+		}
+	}
+
+	for _, expectedKey := range []string{"space", "a", "n", "b", "q", "j", "k", "enter", "escape", "down", "up"} {
+		if !keyFound[expectedKey] {
+			t.Errorf("missing key %q in select_fixes keymap", expectedKey)
+		}
+	}
+}
+
+
+
 

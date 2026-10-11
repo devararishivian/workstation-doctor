@@ -52,6 +52,8 @@ func (d *doctorApp) Render(_ *tui.App) *tui.Element {
 		return d.renderMigrationDone()
 	case "no_fixes":
 		return d.renderNoFixes()
+	case "select_fixes":
+		return d.renderSelectFixes()
 	default:
 		return d.renderResults()
 	}
@@ -1540,4 +1542,115 @@ func (d *doctorApp) renderNoFixes() *tui.Element {
 
 	wrapper.AddChild(card)
 	return wrapper
+}
+
+func (d *doctorApp) renderSelectFixes() *tui.Element {
+	root := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Column),
+		tui.WithBorder(tui.BorderRounded),
+		tui.WithBorderStyle(tui.NewStyle().Foreground(catppuccinBlue)),
+		tui.WithPadding(1),
+		tui.WithHeightPercent(100.0),
+		tui.WithWidthPercent(100.0),
+	)
+
+	items := d.selectFixItems.Get()
+	selectedCount := 0
+	for _, it := range items {
+		if it.Selected {
+			selectedCount++
+		}
+	}
+
+	topBar := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Row),
+		tui.WithJustify(tui.JustifySpaceBetween),
+	)
+	topBar.AddChild(tui.New(
+		tui.WithText("Select Updates to Apply"),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinBlue).Bold()),
+	))
+	topBar.AddChild(tui.New(
+		tui.WithText(fmt.Sprintf("%d of %d selected", selectedCount, len(items))),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	))
+	root.AddChild(topBar)
+
+	if msg := d.statusMsg.Get(); msg != "" {
+		root.AddChild(tui.New(
+			tui.WithText("▶ "+msg),
+			tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow)),
+		))
+	}
+
+	root.AddChild(hrLine())
+
+	listBox := tui.New(
+		tui.WithDisplay(tui.DisplayFlex),
+		tui.WithDirection(tui.Column),
+		tui.WithFlexGrow(1.0),
+	)
+
+	currentSel := d.selectedResult.Get()
+	for idx, it := range items {
+		isSelected := idx == currentSel
+
+		row := tui.New(
+			tui.WithDisplay(tui.DisplayFlex),
+			tui.WithDirection(tui.Row),
+			tui.WithHeight(1),
+		)
+
+		box := "[ ]"
+		if it.Selected {
+			box = "[x]"
+		}
+
+		cursor := "  "
+		itemStyle := tui.NewStyle()
+		if isSelected {
+			cursor = "► "
+			itemStyle = tui.NewStyle().Foreground(catppuccinGreen).Bold()
+		} else {
+			itemStyle = tui.NewStyle().Foreground(catppuccinDim)
+		}
+
+		boxStyle := tui.NewStyle()
+		if it.Selected {
+			boxStyle = tui.NewStyle().Foreground(catppuccinGreen).Bold()
+		} else {
+			boxStyle = tui.NewStyle().Foreground(catppuccinDim)
+		}
+
+		row.AddChild(tui.New(
+			tui.WithWidth(6),
+			tui.WithText(cursor+box),
+			tui.WithTextStyle(boxStyle),
+		))
+		row.AddChild(tui.New(
+			tui.WithWidth(24),
+			tui.WithText(it.Component),
+			tui.WithTextStyle(itemStyle),
+		))
+		row.AddChild(tui.New(
+			tui.WithFlexGrow(1.0),
+			tui.WithText(it.Label),
+			tui.WithTextStyle(itemStyle),
+		))
+
+		listBox.AddChild(row)
+	}
+	root.AddChild(listBox)
+
+	root.AddChild(hrLine())
+
+	footer := tui.New(
+		tui.WithText("[Space: Toggle · Enter: Apply selected · a: Select all · n: Deselect all · Esc: Cancel · q: Quit]"),
+		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
+	)
+	root.AddChild(footer)
+
+	return root
 }

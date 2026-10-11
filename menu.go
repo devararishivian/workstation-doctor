@@ -43,7 +43,7 @@ func (d *doctorApp) KeyMap() tui.KeyMap {
 			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.stop() }),
 			tui.On(tui.KeyEnter, func(_ tui.KeyEvent) { d.openSelectedComponentDetail() }),
 			tui.On(tui.Rune('d'), func(_ tui.KeyEvent) { d.openSelectedComponentDetail() }),
-			tui.On(tui.Rune('f'), func(_ tui.KeyEvent) { d.runAction("fix") }),
+			tui.On(tui.Rune('f'), func(_ tui.KeyEvent) { d.enterSelectFixes() }),
 			tui.On(tui.Rune('r'), func(_ tui.KeyEvent) { d.startAudit() }),
 			tui.On(tui.Rune('h'), func(_ tui.KeyEvent) { d.runAction("history") }),
 			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
@@ -253,6 +253,64 @@ func (d *doctorApp) KeyMap() tui.KeyMap {
 			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) { d.mode.Set("results") }),
 			tui.On(tui.Rune('m'), func(_ tui.KeyEvent) { d.mode.Set("results") }),
 			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) { d.stop() }),
+		}
+	case "select_fixes":
+		return tui.KeyMap{
+			tui.On(tui.Rune(' '), func(_ tui.KeyEvent) {
+				d.toggleFixItem(d.selectedResult.Get())
+			}),
+			tui.On(tui.KeyEnter, func(_ tui.KeyEvent) {
+				d.confirmSelectedFixes()
+			}),
+			tui.On(tui.Rune('a'), func(_ tui.KeyEvent) {
+				d.selectAllFixes()
+			}),
+			tui.On(tui.Rune('n'), func(_ tui.KeyEvent) {
+				d.deselectAllFixes()
+			}),
+			tui.On(tui.KeyEscape, func(_ tui.KeyEvent) {
+				d.mode.Set("results")
+			}),
+			tui.On(tui.Rune('b'), func(_ tui.KeyEvent) {
+				d.mode.Set("results")
+			}),
+			tui.On(tui.Rune('q'), func(_ tui.KeyEvent) {
+				d.stop()
+			}),
+			tui.On(tui.KeyDown, func(_ tui.KeyEvent) {
+				d.selectedResult.Update(func(v int) int {
+					items := d.selectFixItems.Get()
+					if v < len(items)-1 {
+						return v + 1
+					}
+					return v
+				})
+			}),
+			tui.On(tui.Rune('j'), func(_ tui.KeyEvent) {
+				d.selectedResult.Update(func(v int) int {
+					items := d.selectFixItems.Get()
+					if v < len(items)-1 {
+						return v + 1
+					}
+					return v
+				})
+			}),
+			tui.On(tui.KeyUp, func(_ tui.KeyEvent) {
+				d.selectedResult.Update(func(v int) int {
+					if v > 0 {
+						return v - 1
+					}
+					return 0
+				})
+			}),
+			tui.On(tui.Rune('k'), func(_ tui.KeyEvent) {
+				d.selectedResult.Update(func(v int) int {
+					if v > 0 {
+						return v - 1
+					}
+					return 0
+				})
+			}),
 		}
 	default:
 		return tui.KeyMap{

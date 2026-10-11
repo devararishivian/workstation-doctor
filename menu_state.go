@@ -30,6 +30,7 @@ type doctorApp struct {
 	statusMsg      *tui.State[string]
 	lastSummary    *tui.State[string]
 	tickCount      *tui.State[int]
+	selectFixItems *tui.State[[]fixCandidate]
 
 	// Redesign service state
 	report            *tui.State[doctor.AuditReport]
@@ -44,6 +45,14 @@ type doctorApp struct {
 	migrationResult   *store.MigrationResult
 	currentGeneration uint64
 	auditCancel       context.CancelFunc
+}
+
+type fixCandidate struct {
+	Component string
+	Label     string
+	ActionID  string
+	Key       doctor.FindingKey
+	Selected  bool
 }
 
 var (
@@ -69,6 +78,7 @@ func newDoctorApp(ctx context.Context, service *app.Service) *doctorApp {
 		activeDetail:   tui.NewState(""),
 		currentDetail:  tui.NewState(Detail{}),
 		historyActions: tui.NewState([]store.ActionRecord{}),
+		selectFixItems: tui.NewState([]fixCandidate{}),
 	}
 	return d
 }
@@ -86,6 +96,7 @@ func (d *doctorApp) BindApp(app *tui.App) {
 		d.activeDetail.BindApp(app)
 		d.currentDetail.BindApp(app)
 		d.historyActions.BindApp(app)
+		d.selectFixItems.BindApp(app)
 	}
 	go d.startAudit()
 }
@@ -248,13 +259,108 @@ func (d *doctorApp) returnFromActionDone() {
 	d.startAudit()
 }
 
-func (d *doctorApp) prepareAutomaticFixes(filterComponent string) {
+func (d *doctorApp) enterSelectFixes() {
+	rep := d.report.Get()
+	var candidates []fixCandidate
+	seenCmd := map[string]bool{}
+
+	for _, f := range rep.Findings {
+		for _, a := range f.Actions {
+			if a.Mode == doctor.ActionAutomatic {
+				cmd := ""
+				if len(a.Steps) > 0 && len(a.Steps[0].Command.Args) > 0 {
+					cmd = a.Steps[0].Command.Executable + " " + strings.Join(a.Steps[0].Command.Args, " ")
+				}
+				if cmd != "" && seenCmd[cmd] {
+					continue
+				}
+				if cmd != "" {
+					seenCmd[cmd] = true
+				}
+				candidates = append(candidates, fixCandidate{
+					Component: f.Key.CheckID,
+					Label:     a.Label,
+					ActionID:  a.ID,
+					Key:       f.Key,
+					Selected:  true,
+				})
+			}
+		}
+	}
+
+	if len(candidates) == 0 {
+		d.statusMsg.Set("No actions needed. All components are current.")
+		d.mode.Set("no_fixes")
+		return
+	}
+
+	d.selectFixItems.Set(candidates)
+	d.selectedResult.Set(0)
+	d.scrollOffset.Set(0)
+	d.mode.Set("select_fixes")
+}
+
+func (d *doctorApp) toggleFixItem(idx int) {
+	items := d.selectFixItems.Get()
+	if idx < 0 || idx >= len(items) {
+		return
+	}
+	updated := make([]fixCandidate, len(items))
+	copy(updated, items)
+	updated[idx].Selected = !updated[idx].Selected
+	d.selectFixItems.Set(updated)
+}
+
+func (d *doctorApp) selectAllFixes() {
+	items := d.selectFixItems.Get()
+	updated := make([]fixCandidate, len(items))
+	for i, it := range items {
+		it.Selected = true
+		updated[i] = it
+	}
+	d.selectFixItems.Set(updated)
+}
+
+func (d *doctorApp) deselectAllFixes() {
+	items := d.selectFixItems.Get()
+	updated := make([]fixCandidate, len(items))
+	for i, it := range items {
+		it.Selected = false
+		updated[i] = it
+	}
+	d.selectFixItems.Set(updated)
+}
+
+func (d *doctorApp) confirmSelectedFixes() {
+	var selectedComponents []string
+	for _, item := range d.selectFixItems.Get() {
+		if item.Selected {
+			selectedComponents = append(selectedComponents, item.Component)
+		}
+	}
+	if len(selectedComponents) == 0 {
+		d.statusMsg.Set("No actions needed. All components are current.")
+		d.mode.Set("no_fixes")
+		return
+	}
+	d.prepareAutomaticFixes(selectedComponents)
+}
+
+func (d *doctorApp) prepareAutomaticFixes(filterComponents []string) {
 	rep := d.report.Get()
 	var preps []app.PreparedAction
 	seenCmd := map[string]bool{}
 
+	var allowed map[string]bool
+	if filterComponents != nil {
+		allowed = make(map[string]bool, len(filterComponents))
+		for _, c := range filterComponents {
+			allowed[c] = true
+		}
+	}
+
 	for _, f := range rep.Findings {
-		if filterComponent != "" && f.Key.CheckID != filterComponent {
+		if allowed != nil && !allowed[f.Key.CheckID] {
 			continue
 		}
 		for _, a := range f.Actions {
@@ -283,8 +389,10 @@ func (d *doctorApp) prepareAutomaticFixes(filterComponent string) {
 	}
 
 	if len(preps) == 0 {
-		if filterComponent != "" {
-			d.statusMsg.Set("No automatic maintenance action available for " + filterComponent)
+		if len(filterComponents) == 1 {
+			d.statusMsg.Set("No automatic maintenance action available for " + filterComponents[0])
+		} else if len(filterComponents) > 1 {
+			d.statusMsg.Set("No automatic maintenance action available for selected components")
 		} else {
 			d.statusMsg.Set("No actions needed. All components are current.")
 		}
@@ -318,7 +426,7 @@ func (d *doctorApp) prepareFirstAction() {
 		sel = 0
 	}
 	comp := rows[sel].Component
-	d.prepareAutomaticFixes(comp)
+	d.prepareAutomaticFixes([]string{comp})
 }
 
 func (d *doctorApp) loadHistory() {
@@ -399,7 +507,7 @@ func (d *doctorApp) openSelectedHistoryDetail() {
 }
 
 func (d *doctorApp) triggerAutomaticFix() {
-	d.prepareAutomaticFixes("")
+	d.prepareAutomaticFixes(nil)
 }
 
 func (d *doctorApp) stop() {
