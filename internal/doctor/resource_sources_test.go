@@ -236,6 +236,9 @@ func TestCheckSuperpowersSourceWithGitTagAndRelease(t *testing.T) {
 		if !strings.Contains(f.Actions[0].Steps[0].Command.Args[1], "git:github.com/obra/superpowers") {
 			t.Fatalf("unexpected step command args: %v", f.Actions[0].Steps[0].Command.Args)
 		}
+		if !strings.Contains(f.Actions[0].Reason, "→") {
+			t.Fatalf("expected version transition in Reason, got %q", f.Actions[0].Reason)
+		}
 	})
 
 	t.Run("current release matches ok", func(t *testing.T) {
@@ -362,6 +365,9 @@ func TestNpmUpdateUsesUpdateNotInstall(t *testing.T) {
 	}
 	if f.Actions[0].Steps[0].Command.Args[0] != "update" {
 		t.Fatalf("expected 'update' command, got %q", f.Actions[0].Steps[0].Command.Args[0])
+	}
+	if !strings.Contains(f.Actions[0].Reason, "→") {
+		t.Fatalf("expected version transition in Reason, got %q", f.Actions[0].Reason)
 	}
 }
 

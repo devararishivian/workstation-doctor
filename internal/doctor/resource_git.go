@@ -255,7 +255,7 @@ func inspectGitResource(ctx context.Context, h *Host, _ Instance, r ResourceSour
 								Key:                 f.Key,
 								Mode:                ActionAutomatic,
 								Label:               fmt.Sprintf("Update %s via Pi", filepath.Base(r.Identity)),
-								Reason:              fmt.Sprintf("Git package %s is outdated (%s -> %s)", filepath.Base(r.Identity), localTag, remoteTag),
+								Reason:              fmt.Sprintf("Git package %s is outdated (%s → %s)", filepath.Base(r.Identity), localTag, remoteTag),
 								TargetIDs:           []string{r.Identity},
 								TargetVersion:       Fact{State: EvidenceKnown, Label: "Target version", Value: remoteTag},
 								Preconditions:       []Fact{{State: EvidenceKnown, Label: "Installed version", Value: localTag}},

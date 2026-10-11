@@ -295,7 +295,7 @@ func evaluateResource(ctx context.Context, h *Host, i Instance, check string) []
 							Key:                 f.Key,
 							Mode:                ActionAutomatic,
 							Label:               fmt.Sprintf("Update %s via Pi", r.Identity),
-							Reason:              fmt.Sprintf("Package %s is outdated (%s -> %s)", r.Identity, metadata.Version, remote.Version),
+							Reason:              fmt.Sprintf("Package %s is outdated (%s → %s)", r.Identity, metadata.Version, remote.Version),
 							TargetIDs:           []string{i.ID},
 							TargetVersion:       Fact{State: EvidenceKnown, Label: "Target version", Value: remote.Version},
 							Preconditions:       []Fact{i.Root, {State: EvidenceKnown, Label: "Installed package version", Value: metadata.Version}},
