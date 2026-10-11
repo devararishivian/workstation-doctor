@@ -155,7 +155,7 @@ func TestHerdrPluginPartialResults(t *testing.T) {
 		for _, a := range f.Actions {
 			if a.Mode == ActionAutomatic {
 				auto = true
-				if len(a.Steps) != 1 || a.Steps[0].Command.Executable != filepath.Join(h.Home, "herdr") || !slices.Equal(a.Steps[0].Command.Args, []string{"plugin", "install", "a/good/plugins/good", "--ref", "main", "--yes"}) || ValidateProposal(a, DefaultLimits()) != nil {
+				if len(a.Steps) != 2 || a.Steps[0].Command.Executable != filepath.Join(h.Home, "herdr") || !slices.Equal(a.Steps[0].Command.Args, []string{"plugin", "install", "a/good/plugins/good", "--ref", "main", "--yes"}) || a.Steps[1].Command.Executable != filepath.Join(h.Home, "herdr") || !slices.Equal(a.Steps[1].Command.Args, []string{"server", "reload-config"}) || ValidateProposal(a, DefaultLimits()) != nil {
 					t.Fatalf("unsafe action=%+v", a)
 				}
 			}
@@ -333,4 +333,169 @@ func makeExecutable(t *testing.T, path string) {
 	if e := os.Chmod(path, 0o700); e != nil {
 		t.Fatal(e)
 	}
+}
+
+func TestHerdrPluginUpdateIncludesReload(t *testing.T) {
+	t.Parallel()
+	h := testHost(t)
+	root := t.TempDir()
+	managed := filepath.Join(root, "managed")
+	makeExecutable(t, filepath.Join(h.Home, "git"))
+	makeExecutable(t, filepath.Join(h.Home, "herdr"))
+	resourceFile(t, filepath.Join(managed, ".git", "config"), "[core]\nrepositoryformatversion = 0\n")
+	entry := herdrRegistryEntry{
+		PluginID:   "plugin1",
+		PluginRoot: managed,
+		Source: herdrPluginSource{
+			Kind:           "github",
+			Owner:          "a",
+			Repo:           "b",
+			RequestedRef:   "main",
+			ResolvedCommit: strings.Repeat("a", 40),
+			ManagedPath:    managed,
+		},
+	}
+	raw, _ := json.Marshal([]herdrRegistryEntry{entry})
+	resourceFile(t, filepath.Join(root, "plugins.json"), string(raw))
+	h.RunRead = func(_ context.Context, c Command) (CommandResult, error) {
+		if slices.Contains(c.Args, "rev-parse") {
+			return CommandResult{Stdout: []byte(strings.Repeat("a", 40))}, nil
+		}
+		return CommandResult{}, nil
+	}
+	h.Fetch = func(_ context.Context, address string) ([]byte, error) {
+		if strings.Contains(address, "/compare/") {
+			return []byte(`{"status":"ahead","ahead_by":1}`), nil
+		}
+		return []byte(`{"commit":{"sha":"` + strings.Repeat("b", 40) + `"}}`), nil
+	}
+	d := discoverHerdrPlugins(t.Context(), h, Scope{Locations: map[string][]string{"herdr-config": {filepath.Join(root, "config.toml")}}})
+	findings := checkHerdrPluginSources(t.Context(), h, Scope{}, d.Instances[0])
+	if len(findings) == 0 || len(findings[0].Actions) == 0 {
+		t.Fatalf("expected action proposal, got findings: %+v", findings)
+	}
+	action := findings[0].Actions[0]
+	if action.Mode != ActionAutomatic {
+		t.Fatalf("expected automatic action, got %v", action.Mode)
+	}
+	if len(action.Steps) != 2 {
+		t.Fatalf("expected 2 steps, got %d", len(action.Steps))
+	}
+	if !slices.Equal(action.Steps[1].Command.Args, []string{"server", "reload-config"}) {
+		t.Fatalf("expected second step to be server reload-config, got %v", action.Steps[1].Command.Args)
+	}
+	if action.Steps[1].Command.Executable != filepath.Join(h.Home, "herdr") {
+		t.Fatalf("unexpected executable for reload step: %s", action.Steps[1].Command.Executable)
+	}
+	if !slices.Contains(action.SideEffects, "Reloads the running Herdr server to apply plugin changes.") {
+		t.Fatalf("expected reload side effect, got %v", action.SideEffects)
+	}
+}
+
+func TestHerdrPluginCheckAddsAPIFailureDiagnostic(t *testing.T) {
+	t.Parallel()
+	t.Run("branch failure", func(t *testing.T) {
+		h := testHost(t)
+		root := t.TempDir()
+		managed := filepath.Join(root, "managed")
+		makeExecutable(t, filepath.Join(h.Home, "git"))
+		resourceFile(t, filepath.Join(managed, ".git", "config"), "[core]\nrepositoryformatversion = 0\n")
+		entry := herdrRegistryEntry{
+			PluginID:   "branch-fail",
+			PluginRoot: managed,
+			Source: herdrPluginSource{
+				Kind:           "github",
+				Owner:          "a",
+				Repo:           "b",
+				RequestedRef:   "main",
+				ResolvedCommit: strings.Repeat("a", 40),
+				ManagedPath:    managed,
+			},
+		}
+		raw, _ := json.Marshal([]herdrRegistryEntry{entry})
+		resourceFile(t, filepath.Join(root, "plugins.json"), string(raw))
+		h.RunRead = func(_ context.Context, c Command) (CommandResult, error) {
+			if slices.Contains(c.Args, "rev-parse") {
+				return CommandResult{Stdout: []byte(strings.Repeat("a", 40))}, nil
+			}
+			return CommandResult{}, nil
+		}
+		h.Fetch = func(context.Context, string) ([]byte, error) {
+			return nil, errors.New("rate limited")
+		}
+		d := discoverHerdrPlugins(t.Context(), h, Scope{Locations: map[string][]string{"herdr-config": {filepath.Join(root, "config.toml")}}})
+		findings := checkHerdrPluginSources(t.Context(), h, Scope{}, d.Instances[0])
+		if len(findings) == 0 {
+			t.Fatal("expected finding")
+		}
+		var found bool
+		for _, fact := range findings[0].Evidence {
+			if fact.Label == "GitHub API status" {
+				found = true
+				if fact.Value != "Request failed or rate limited" {
+					t.Fatalf("unexpected API status value: %q", fact.Value)
+				}
+				if fact.Source != "HTTP response" {
+					t.Fatalf("unexpected API status source: %q", fact.Source)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("expected 'GitHub API status' fact in evidence: %+v", findings[0].Evidence)
+		}
+	})
+
+	t.Run("compare failure", func(t *testing.T) {
+		h := testHost(t)
+		root := t.TempDir()
+		managed := filepath.Join(root, "managed")
+		makeExecutable(t, filepath.Join(h.Home, "git"))
+		resourceFile(t, filepath.Join(managed, ".git", "config"), "[core]\nrepositoryformatversion = 0\n")
+		entry := herdrRegistryEntry{
+			PluginID:   "compare-fail",
+			PluginRoot: managed,
+			Source: herdrPluginSource{
+				Kind:           "github",
+				Owner:          "a",
+				Repo:           "b",
+				RequestedRef:   "main",
+				ResolvedCommit: strings.Repeat("a", 40),
+				ManagedPath:    managed,
+			},
+		}
+		raw, _ := json.Marshal([]herdrRegistryEntry{entry})
+		resourceFile(t, filepath.Join(root, "plugins.json"), string(raw))
+		h.RunRead = func(_ context.Context, c Command) (CommandResult, error) {
+			if slices.Contains(c.Args, "rev-parse") {
+				return CommandResult{Stdout: []byte(strings.Repeat("a", 40))}, nil
+			}
+			return CommandResult{}, nil
+		}
+		h.Fetch = func(_ context.Context, address string) ([]byte, error) {
+			if strings.Contains(address, "/compare/") {
+				return nil, errors.New("rate limited")
+			}
+			return []byte(`{"commit":{"sha":"` + strings.Repeat("b", 40) + `"}}`), nil
+		}
+		d := discoverHerdrPlugins(t.Context(), h, Scope{Locations: map[string][]string{"herdr-config": {filepath.Join(root, "config.toml")}}})
+		findings := checkHerdrPluginSources(t.Context(), h, Scope{}, d.Instances[0])
+		if len(findings) == 0 {
+			t.Fatal("expected finding")
+		}
+		var found bool
+		for _, fact := range findings[0].Evidence {
+			if fact.Label == "GitHub API status" {
+				found = true
+				if fact.Value != "Request failed or rate limited" {
+					t.Fatalf("unexpected API status value: %q", fact.Value)
+				}
+				if fact.Source != "HTTP response" {
+					t.Fatalf("unexpected API status source: %q", fact.Source)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("expected 'GitHub API status' fact in evidence on compare error: %+v", findings[0].Evidence)
+		}
+	})
 }

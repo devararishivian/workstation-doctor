@@ -304,6 +304,16 @@ func checkHerdrPluginSources(ctx context.Context, h *Host, _ Scope, i Instance) 
 		if tagErr == nil && len(tag) <= int(DefaultLimits().MaxHTTPBytes) && json.Unmarshal(tag, &tagRef) == nil && gitObjectID(strings.ToLower(tagRef.Object.SHA)) {
 			f.Outcome = OutcomeNotApplicable
 			f.Explanation = "The requested Git tag is pinned; automatic advancement is disabled."
+			return []Finding{f}
+		}
+		if e != nil {
+			f.Evidence = append(f.Evidence, Fact{
+				State:      EvidenceKnown,
+				Label:      "GitHub API status",
+				Value:      "Request failed or rate limited",
+				Source:     "HTTP response",
+				ObservedAt: hostNow(h),
+			})
 		}
 		return []Finding{f}
 	}
@@ -318,6 +328,15 @@ func checkHerdrPluginSources(ctx context.Context, h *Host, _ Scope, i Instance) 
 	compareURL := "https://api.github.com/repos/" + url.PathEscape(src.Owner) + "/" + url.PathEscape(src.Repo) + "/compare/" + installed + "..." + upstream
 	comparison, compareErr := h.Fetch(ctx, compareURL)
 	if compareErr != nil || len(comparison) > int(DefaultLimits().MaxHTTPBytes) {
+		if compareErr != nil {
+			f.Evidence = append(f.Evidence, Fact{
+				State:      EvidenceKnown,
+				Label:      "GitHub API status",
+				Value:      "Request failed or rate limited",
+				Source:     "HTTP response",
+				ObservedAt: hostNow(h),
+			})
+		}
 		return []Finding{f}
 	}
 	var relation struct {
@@ -386,6 +405,11 @@ func herdrPluginUpdateProposal(h *Host, src herdrPluginSource, id string, f Find
 	p.Label = "Update Herdr plugin " + target
 	p.Reason = "Update Herdr plugin " + target + " to latest upstream revision"
 	p.Steps = []CommandStep{{Label: "Install the selected Herdr plugin source", Command: Command{Executable: executable, Args: args}}}
+	p.Steps = append(p.Steps, CommandStep{
+		Label:   "Reload the Herdr server configuration",
+		Command: Command{Executable: executable, Args: []string{"server", "reload-config"}},
+	})
+	p.SideEffects = append(p.SideEffects, "Reloads the running Herdr server to apply plugin changes.")
 	return p
 }
 
