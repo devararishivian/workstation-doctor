@@ -23,7 +23,7 @@ import (
 )
 
 // Version is set at build time (-ldflags "-X main.version=...").
-var version = "1.0.4"
+var version = "1.1.0"
 
 // LaunchOptions holds validated startup configuration for the TUI application.
 type LaunchOptions struct {
