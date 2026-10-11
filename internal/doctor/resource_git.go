@@ -292,6 +292,15 @@ func inspectGitResource(ctx context.Context, h *Host, _ Instance, r ResourceSour
 
 	remote, e := h.Fetch(ctx, "https://api.github.com/repos/"+parts[1]+"/"+parts[2]+"/commits/"+url.PathEscape(targetRef))
 	if e != nil || len(remote) > int(DefaultLimits().MaxHTTPBytes) {
+		if e != nil {
+			f.Evidence = append(f.Evidence, Fact{
+				State:      EvidenceKnown,
+				Label:      "GitHub API status",
+				Value:      "Request failed or rate limited",
+				Source:     "HTTP response",
+				ObservedAt: hostNow(h),
+			})
+		}
 		f.Explanation = "Remote lookup is unavailable. Local revision evidence is retained."
 		return f
 	}

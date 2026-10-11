@@ -271,6 +271,15 @@ func evaluateResource(ctx context.Context, h *Host, i Instance, check string) []
 		}
 		raw, e = h.Fetch(ctx, "https://registry.npmjs.org/"+url.PathEscape(r.Identity)+"/latest")
 		if e != nil || len(raw) > int(DefaultLimits().MaxHTTPBytes) {
+			if e != nil {
+				f.Evidence = append(f.Evidence, Fact{
+					State:      EvidenceKnown,
+					Label:      "npm API status",
+					Value:      "Request failed or rate limited",
+					Source:     "HTTP response",
+					ObservedAt: hostNow(h),
+				})
+			}
 			return []Finding{f}
 		}
 		var remote struct{ Version string }

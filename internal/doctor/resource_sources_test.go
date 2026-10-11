@@ -424,3 +424,83 @@ func TestGitUpdateFallsBackToInstallWhenPathMissing(t *testing.T) {
 		t.Fatalf("expected 'install' command, got %q", f.Actions[0].Steps[0].Command.Args[0])
 	}
 }
+
+func TestGitResourceAddsAPIFailureFact(t *testing.T) {
+	t.Parallel()
+	h := testHost(t)
+	resourceFile(t, filepath.Join(h.Home, "git"), "synthetic; never execute")
+	if e := os.Chmod(filepath.Join(h.Home, "git"), 0o700); e != nil {
+		t.Fatal(e)
+	}
+	root := filepath.Join(h.Home, "repo")
+	resourceFile(t, filepath.Join(root, ".git", "config"), "[core]\nrepositoryformatversion = 0\n")
+	h.RunRead = func(_ context.Context, c Command) (CommandResult, error) {
+		last := strings.Join(c.Args, " ")
+		if strings.Contains(last, "rev-parse") {
+			return CommandResult{Stdout: []byte(strings.Repeat("a", 40))}, nil
+		}
+		if strings.Contains(last, "status") {
+			return CommandResult{Stdout: []byte("")}, nil
+		}
+		if strings.Contains(last, "symbolic-ref") {
+			return CommandResult{Stdout: []byte("main")}, nil
+		}
+		return CommandResult{ExitCode: 1}, errors.New("ancestry unavailable")
+	}
+	h.Fetch = func(context.Context, string) ([]byte, error) {
+		return nil, errors.New("rate limited")
+	}
+	source := ResourceSource{Kind: "git", Identity: "github.com/obra/superpowers", Path: root, RequestedRef: "main", Scope: "user"}
+	i := sourceInstance(h, "superpowers", source)
+	findings := checkSuperpowersSource(t.Context(), h, Scope{}, i)
+	if len(findings) == 0 {
+		t.Fatal("expected findings")
+	}
+	var found bool
+	for _, fact := range findings[0].Evidence {
+		if fact.Label == "GitHub API status" {
+			found = true
+			if fact.Value != "Request failed or rate limited" {
+				t.Fatalf("unexpected API status value: %q", fact.Value)
+			}
+			if fact.Source != "HTTP response" {
+				t.Fatalf("unexpected API status source: %q", fact.Source)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected 'GitHub API status' fact in evidence: %+v", findings[0].Evidence)
+	}
+}
+
+func TestNpmResourceAddsAPIFailureFact(t *testing.T) {
+	t.Parallel()
+	h := testHost(t)
+	makeExecutable(t, filepath.Join(h.Home, "pi"))
+	resourceFile(t, filepath.Join(h.Home, ".pi", "agent", "settings.json"), `{"packages":["npm:@foo/bar"]}`)
+	resourceFile(t, filepath.Join(h.Home, ".pi", "agent", "npm", "node_modules", "@foo", "bar", "package.json"), `{"name":"@foo/bar","version":"1.0.0"}`)
+	h.Fetch = func(context.Context, string) ([]byte, error) {
+		return nil, errors.New("rate limited")
+	}
+	d := discoverPiPackages(t.Context(), h, Scope{})
+	if len(d.Instances) != 1 {
+		t.Fatalf("expected 1 instance, got %d", len(d.Instances))
+	}
+	f := checkPiPackageSources(t.Context(), h, Scope{}, d.Instances[0])[0]
+	var found bool
+	for _, fact := range f.Evidence {
+		if fact.Label == "npm API status" {
+			found = true
+			if fact.Value != "Request failed or rate limited" {
+				t.Fatalf("unexpected API status value: %q", fact.Value)
+			}
+			if fact.Source != "HTTP response" {
+				t.Fatalf("unexpected API status source: %q", fact.Source)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected 'npm API status' fact in evidence: %+v", f.Evidence)
+	}
+}
+

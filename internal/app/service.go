@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -128,6 +129,14 @@ func (s *Service) Apply(ctx context.Context, prepared PreparedAction, approval A
 		TargetVersion: prepared.proposal.TargetVersion.Value,
 		Scope:         scopeStr,
 		Plan:          plan,
+	}
+
+	for _, fact := range prepared.proposal.Preconditions {
+		if strings.Contains(fact.Label, "Installed") || strings.Contains(fact.Label, "revision") ||
+			strings.Contains(strings.ToLower(fact.Label), "installed") || strings.Contains(strings.ToLower(fact.Label), "revision") {
+			start.InstalledVersion = fact.Value
+			break
+		}
 	}
 
 	if err := history.StartAction(ctx, start); err != nil {

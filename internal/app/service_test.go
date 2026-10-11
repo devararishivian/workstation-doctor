@@ -598,3 +598,44 @@ func TestApplyMultipleTimesSameActionDoesNotFailUniqueConstraint(t *testing.T) {
 		t.Fatalf("expected unique record IDs, got identical: %s", rep1.RecordID)
 	}
 }
+
+func TestApplyPopulatesInstalledVersion(t *testing.T) {
+	mock := &mockHistory{}
+	proposal := doctor.ActionProposal{
+		ID: "version-prop", Key: doctor.FindingKey{IntegrationID: "fixture", CheckID: "update", InstanceID: "fixture-instance"},
+		Mode: doctor.ActionAutomatic, Label: "Version proposal", Reason: "Version test",
+		TargetIDs: []string{"fixture-target"}, TargetVersion: doctor.Fact{State: doctor.EvidenceKnown, Value: "2.0"},
+		Steps:               []doctor.CommandStep{{Label: "Run", Command: doctor.Command{Executable: "/usr/bin/true", Dir: "/tmp"}}},
+		Preconditions:       []doctor.Fact{{State: doctor.EvidenceKnown, Label: "Installed version", Value: "1.2.3"}},
+		VerificationCheckID: "verify",
+	}
+	service, key, _ := syntheticServiceWithProposals(t, t.TempDir(), new(atomic.Int32), proposal)
+	service.options.OpenHistory = func(context.Context, string, store.Policy) (History, error) {
+		return mock, nil
+	}
+	service.options.RunStep = func(context.Context, doctor.CommandStep) (store.StepResult, error) {
+		exit0 := 0
+		return store.StepResult{Outcome: store.StepOutcomeCompleted, ExitCode: &exit0}, nil
+	}
+
+	prepared, err := service.Prepare(t.Context(), key, "version-prop")
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	approval, err := service.Confirm(prepared)
+	if err != nil {
+		t.Fatalf("Confirm: %v", err)
+	}
+
+	_, err = service.Apply(t.Context(), prepared, approval)
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if len(mock.started) != 1 {
+		t.Fatalf("expected 1 started action, got %d", len(mock.started))
+	}
+	if mock.started[0].InstalledVersion != "1.2.3" {
+		t.Fatalf("expected InstalledVersion '1.2.3', got %q", mock.started[0].InstalledVersion)
+	}
+}
+
