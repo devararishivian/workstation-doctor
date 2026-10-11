@@ -123,13 +123,12 @@ An interactive terminal is required.
 
 ### Dashboard Navigation
 
-- **Arrow keys (Up / Down)**: Select a component in the table.
+- **Arrow keys (Up / Down)**: Navigate through components in the table.
 - **Enter** or **d**: Open the detail view for the selected component.
-- **1**: Re-run all health checks.
-- **2**: Open the manual maintenance steps view.
-- **3**: Run automatic maintenance for components that support it.
-- **4**: Open the action history browser.
-- **Esc** or **b**: Return to the previous screen.
+- **f**: Open the update selection view to choose and apply available fixes.
+- **r**: Re-check all component statuses.
+- **h**: Open the update history browser.
+- **Esc** or **b**: Return to the previous screen (or exit from the dashboard).
 - **q**: Exit the application.
 
 ### Command-Line Flags
