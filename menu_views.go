@@ -519,9 +519,31 @@ func (d *doctorApp) renderResults() *tui.Element {
 	}
 	root.AddChild(summaryRow)
 
+	seenAutoCmd := map[string]bool{}
+	nAutoFixes := 0
+	for _, f := range report.Findings {
+		for _, a := range f.Actions {
+			if a.Mode == doctor.ActionAutomatic {
+				cmd := ""
+				if len(a.Steps) > 0 && len(a.Steps[0].Command.Args) > 0 {
+					cmd = a.Steps[0].Command.Executable + " " + strings.Join(a.Steps[0].Command.Args, " ")
+				}
+				if cmd != "" {
+					if seenAutoCmd[cmd] {
+						continue
+					}
+					seenAutoCmd[cmd] = true
+				}
+				nAutoFixes++
+			}
+		}
+	}
+
 	footerText := "[Esc / b: Back to Menu · Enter / d: Details · ↑/↓: Navigate · q: Quit]"
-	if nUpdate > 0 {
-		footerText = fmt.Sprintf("[Enter / d: View Details · 3: Run Automatic Fix (%d pending) · 2: Manual Steps · b: Menu · q: Quit]", nUpdate)
+	if nAutoFixes > 0 {
+		footerText = fmt.Sprintf("[Enter / d: View Details · 3: Run Automatic Fix (%d pending) · 2: Manual Steps · b: Menu · q: Quit]", nAutoFixes)
+	} else if nUpdate > 0 {
+		footerText = "[Enter / d: View Details · 2: Manual Steps · b: Menu · q: Quit]"
 	}
 	nav := tui.New(
 		tui.WithText(footerText),
@@ -568,19 +590,14 @@ func (d *doctorApp) renderManual() *tui.Element {
 	}
 	var items []manualItem
 
-	seen := map[string]bool{}
+	seenKey := map[string]bool{}
+	seenCmd := map[string]bool{}
 
 	for _, f := range report.Findings {
 		if f.Outcome == doctor.OutcomeOK {
 			continue
 		}
 		for _, a := range f.Actions {
-			key := f.Key.CheckID + ":" + a.Label
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
-
 			cmd := ""
 			if len(a.Steps) > 0 {
 				cmd = a.Steps[0].Command.Executable
@@ -588,6 +605,18 @@ func (d *doctorApp) renderManual() *tui.Element {
 					cmd += " " + strings.Join(a.Steps[0].Command.Args, " ")
 				}
 			}
+			if cmd != "" && len(a.Steps[0].Command.Args) > 0 && seenCmd[cmd] {
+				continue
+			}
+			key := f.Key.CheckID + ":" + a.Label
+			if seenKey[key] {
+				continue
+			}
+			seenKey[key] = true
+			if cmd != "" && len(a.Steps[0].Command.Args) > 0 {
+				seenCmd[cmd] = true
+			}
+
 			urlStr := ""
 			if len(f.References) > 0 {
 				urlStr = f.References[0].URL
@@ -603,8 +632,8 @@ func (d *doctorApp) renderManual() *tui.Element {
 		}
 		if f.Outcome == doctor.OutcomeAttention && len(f.Actions) == 0 {
 			key := f.Key.CheckID + ":attention"
-			if !seen[key] {
-				seen[key] = true
+			if !seenKey[key] {
+				seenKey[key] = true
 				urlStr := ""
 				if len(f.References) > 0 {
 					urlStr = f.References[0].URL
@@ -1123,6 +1152,9 @@ func (d *doctorApp) renderDetail() *tui.Element {
 				secBox := tui.New(
 					tui.WithDisplay(tui.DisplayFlex),
 					tui.WithDirection(tui.Column),
+					tui.WithBorder(tui.BorderRounded),
+					tui.WithBorderStyle(tui.NewStyle().Foreground(catppuccinBlue)),
+					tui.WithPadding(1),
 					tui.WithGap(0),
 				)
 				secBox.AddChild(tui.New(

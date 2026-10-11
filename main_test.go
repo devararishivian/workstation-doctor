@@ -168,4 +168,41 @@ func TestAllCheckIDsRegistered(t *testing.T) {
 	}
 }
 
+func TestLiveHostDashboard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping live dashboard in short mode")
+	}
+	defs := doctor.BuiltinDefinitions()
+	engine, err := doctor.NewAuditEngine(defs, doctor.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, err := doctor.NewHost(doctor.Scope{}, doctor.DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep := engine.Audit(t.Context(), host, doctor.Scope{})
+	rows := buildDashboardRows(rep)
+	if len(rows) != 18 {
+		t.Fatalf("expected 18 dashboard rows, got %d", len(rows))
+	}
+
+	app := newDoctorApp(t.Context(), nil)
+	app.report.Set(rep)
+	elemManual := app.renderManual()
+	if elemManual == nil {
+		t.Fatal("renderManual returned nil")
+	}
+
+	elemResults := app.renderResults()
+	if elemResults == nil {
+		t.Fatal("renderResults returned nil")
+	}
+
+	detSuperpowers := componentDetail(rep, "superpowers")
+	if len(detSuperpowers.Sections) == 0 {
+		t.Fatal("expected structured detail sections for superpowers")
+	}
+}
+
 var _ = store.DefaultPolicy

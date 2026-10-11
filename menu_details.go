@@ -199,19 +199,13 @@ func componentDetail(report doctor.AuditReport, checkID string) Detail {
 			Title: fmt.Sprintf("Component: %s", checkID),
 			Sections: []DetailSection{
 				{
-					Heading: "Status",
+					Heading: "Summary",
 					Rows: []DetailRow{
-						{Label: "Outcome", Value: "Unknown"},
-						{Label: "Explanation", Value: "No findings recorded for this component"},
+						{Label: "Check", Value: checkID},
+						{Label: "Status", Value: "Not Installed (N/A)"},
 					},
 				},
 			},
-		}
-	}
-	if len(findings) == 1 {
-		det, err := findingDetail(report, findings[0].Key)
-		if err == nil {
-			return det
 		}
 	}
 
@@ -227,26 +221,55 @@ func componentDetail(report doctor.AuditReport, checkID string) Detail {
 		}
 	}
 
-	detail := Detail{
-		Title: fmt.Sprintf("Component: %s (%d items inspected)", checkID, len(findings)),
-		Sections: []DetailSection{
-			{
-				Heading: "Summary",
-				Rows: []DetailRow{
-					{Label: "Check", Value: checkID},
-					{Label: "Total Items", Value: fmt.Sprintf("%d", len(findings))},
-					{Label: "OK", Value: fmt.Sprintf("%d", nOK)},
-					{Label: "Attention / Updates", Value: fmt.Sprintf("%d", nAttention)},
-					{Label: "Unknown", Value: fmt.Sprintf("%d", nUnknown)},
+	var detail Detail
+	if len(findings) == 1 {
+		f := findings[0]
+		statusLabel := "OK"
+		switch f.Outcome {
+		case doctor.OutcomeAttention:
+			statusLabel = "Attention / Update Required"
+		case doctor.OutcomeNotApplicable:
+			statusLabel = "Not Applicable (N/A)"
+		case doctor.OutcomeUnknown:
+			statusLabel = "Unknown"
+		}
+		detail = Detail{
+			Title: fmt.Sprintf("Component: %s", checkID),
+			Sections: []DetailSection{
+				{
+					Heading: "Summary",
+					Rows: []DetailRow{
+						{Label: "Check", Value: checkID},
+						{Label: "Status", Value: statusLabel},
+					},
 				},
 			},
-		},
+		}
+	} else {
+		detail = Detail{
+			Title: fmt.Sprintf("Component: %s (%d items inspected)", checkID, len(findings)),
+			Sections: []DetailSection{
+				{
+					Heading: "Summary",
+					Rows: []DetailRow{
+						{Label: "Check", Value: checkID},
+						{Label: "Total Items", Value: fmt.Sprintf("%d", len(findings))},
+						{Label: "OK", Value: fmt.Sprintf("%d", nOK)},
+						{Label: "Attention / Updates", Value: fmt.Sprintf("%d", nAttention)},
+						{Label: "Unknown", Value: fmt.Sprintf("%d", nUnknown)},
+					},
+				},
+			},
+		}
 	}
 
 	var attentionRows []DetailRow
 	for _, f := range findings {
 		if f.Outcome == doctor.OutcomeAttention {
 			name := findingInstanceName(report, f)
+			if name == "" || name == f.Explanation {
+				name = checkID
+			}
 			attentionRows = append(attentionRows, DetailRow{
 				Label:  name,
 				Value:  f.Explanation,
@@ -277,29 +300,61 @@ func componentDetail(report doctor.AuditReport, checkID string) Detail {
 		})
 	}
 
-	var okRows []DetailRow
-	for _, f := range findings {
-		if f.Outcome == doctor.OutcomeOK {
-			name := findingInstanceName(report, f)
-			val := "OK"
+	if len(findings) == 1 {
+		f := findings[0]
+		if len(f.Evidence) > 0 {
+			var evRows []DetailRow
 			for _, ev := range f.Evidence {
-				if ev.Label == "Installed package version" || ev.Label == "Installed Git revision" || ev.Label == "Current Git branch" {
-					val = ev.Value
-					break
-				}
+				evRows = append(evRows, DetailRow{
+					Label:      ev.Label,
+					Value:      ev.Value,
+					Source:     ev.Source,
+					ObservedAt: formatTime(ev.ObservedAt),
+				})
 			}
-			okRows = append(okRows, DetailRow{
-				Label:  name,
-				Value:  val,
-				Source: "Current",
+			detail.Sections = append(detail.Sections, DetailSection{
+				Heading: "Evidence & Diagnostics",
+				Rows:    evRows,
 			})
 		}
-	}
-	if len(okRows) > 0 {
-		detail.Sections = append(detail.Sections, DetailSection{
-			Heading: "Current Items (OK)",
-			Rows:    okRows,
-		})
+		if len(f.References) > 0 {
+			var refRows []DetailRow
+			for _, ref := range f.References {
+				refRows = append(refRows, DetailRow{
+					Label: ref.Label,
+					Value: ref.URL,
+				})
+			}
+			detail.Sections = append(detail.Sections, DetailSection{
+				Heading: "Public References",
+				Rows:    refRows,
+			})
+		}
+	} else {
+		var okRows []DetailRow
+		for _, f := range findings {
+			if f.Outcome == doctor.OutcomeOK {
+				name := findingInstanceName(report, f)
+				val := "OK"
+				for _, ev := range f.Evidence {
+					if ev.Label == "Installed package version" || ev.Label == "Installed Git revision" || ev.Label == "Current Git branch" {
+						val = ev.Value
+						break
+					}
+				}
+				okRows = append(okRows, DetailRow{
+					Label:  name,
+					Value:  val,
+					Source: "Current",
+				})
+			}
+		}
+		if len(okRows) > 0 {
+			detail.Sections = append(detail.Sections, DetailSection{
+				Heading: "Current Items (OK)",
+				Rows:    okRows,
+			})
+		}
 	}
 
 	return detail

@@ -846,7 +846,7 @@ func TestMenuBatchAutomaticFixMultipleComponents(t *testing.T) {
 		ID: "update-pkg-1", Key: keyPi1, Mode: doctor.ActionAutomatic,
 		Label: "Update pkg-1", Reason: "Outdated pkg-1", TargetIDs: []string{"pkg-1"},
 		TargetVersion:       doctor.Fact{State: doctor.EvidenceKnown, Value: "2.0"},
-		Steps:               []doctor.CommandStep{{Label: "Run pi install pkg-1", Command: doctor.Command{Executable: "/usr/bin/true", Dir: "/tmp"}}},
+		Steps:               []doctor.CommandStep{{Label: "Run pi install pkg-1", Command: doctor.Command{Executable: "/usr/bin/true", Args: []string{"install", "pkg-1"}, Dir: "/tmp"}}},
 		Preconditions:       []doctor.Fact{{State: doctor.EvidenceKnown, Label: "installed", Value: "1.0"}},
 		VerificationCheckID: "pi-packages",
 	}
@@ -854,7 +854,7 @@ func TestMenuBatchAutomaticFixMultipleComponents(t *testing.T) {
 		ID: "update-pkg-2", Key: keyPi2, Mode: doctor.ActionAutomatic,
 		Label: "Update pkg-2", Reason: "Outdated pkg-2", TargetIDs: []string{"pkg-2"},
 		TargetVersion:       doctor.Fact{State: doctor.EvidenceKnown, Value: "3.0"},
-		Steps:               []doctor.CommandStep{{Label: "Run pi install pkg-2", Command: doctor.Command{Executable: "/usr/bin/true", Dir: "/tmp"}}},
+		Steps:               []doctor.CommandStep{{Label: "Run pi install pkg-2", Command: doctor.Command{Executable: "/usr/bin/true", Args: []string{"install", "pkg-2"}, Dir: "/tmp"}}},
 		Preconditions:       []doctor.Fact{{State: doctor.EvidenceKnown, Label: "installed", Value: "1.0"}},
 		VerificationCheckID: "pi-packages",
 	}
@@ -862,7 +862,7 @@ func TestMenuBatchAutomaticFixMultipleComponents(t *testing.T) {
 		ID: "update-plugin-1", Key: keyHerdr, Mode: doctor.ActionAutomatic,
 		Label: "Update plugin-1", Reason: "Outdated plugin-1", TargetIDs: []string{"plugin-1"},
 		TargetVersion:       doctor.Fact{State: doctor.EvidenceKnown, Value: "commit-2"},
-		Steps:               []doctor.CommandStep{{Label: "Run herdr install plugin-1", Command: doctor.Command{Executable: "/usr/bin/true", Dir: "/tmp"}}},
+		Steps:               []doctor.CommandStep{{Label: "Run herdr install plugin-1", Command: doctor.Command{Executable: "/usr/bin/true", Args: []string{"install", "plugin-1"}, Dir: "/tmp"}}},
 		Preconditions:       []doctor.Fact{{State: doctor.EvidenceKnown, Label: "installed", Value: "commit-1"}},
 		VerificationCheckID: "herdr-plugins",
 	}
@@ -1019,5 +1019,41 @@ func TestMenuManualStepsScrollAndWindowing(t *testing.T) {
 	elemClamped := d.renderManual()
 	if elemClamped == nil {
 		t.Fatal("renderManual returned nil for clamped page")
+	}
+}
+
+func TestMenuDeduplicatesIdenticalCommands(t *testing.T) {
+	keyTool := doctor.FindingKey{IntegrationID: "opencode", CheckID: "opencode", InstanceID: "inst-1"}
+	keyNpm := doctor.FindingKey{IntegrationID: "npm-outdated-g", CheckID: "npm-outdated-g", InstanceID: "inst-2"}
+
+	step := doctor.CommandStep{
+		Label:   "Run npm install opencode-ai@1.19.0",
+		Command: doctor.Command{Executable: "/usr/bin/npm", Args: []string{"install", "-g", "opencode-ai@1.19.0"}},
+	}
+	propTool := doctor.ActionProposal{
+		ID: "update-opencode", Key: keyTool, Mode: doctor.ActionAutomatic,
+		Label: "Update selected global package", Steps: []doctor.CommandStep{step},
+	}
+	propNpm := doctor.ActionProposal{
+		ID: "update-npm", Key: keyNpm, Mode: doctor.ActionAutomatic,
+		Label: "Update selected global package", Steps: []doctor.CommandStep{step},
+	}
+
+	d := newDoctorApp(t.Context(), nil)
+	d.report.Set(doctor.AuditReport{
+		Findings: []doctor.Finding{
+			{Key: keyTool, Outcome: doctor.OutcomeAttention, Actions: []doctor.ActionProposal{propTool}},
+			{Key: keyNpm, Outcome: doctor.OutcomeAttention, Actions: []doctor.ActionProposal{propNpm}},
+		},
+	})
+
+	elemManual := d.renderManual()
+	if elemManual == nil {
+		t.Fatal("renderManual returned nil")
+	}
+
+	elemResults := d.renderResults()
+	if elemResults == nil {
+		t.Fatal("renderResults returned nil")
 	}
 }

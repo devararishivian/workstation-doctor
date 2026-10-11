@@ -24,6 +24,9 @@ func TestProbeActions(t *testing.T) {
 	rep := engine.Audit(t.Context(), host, Scope{})
 	t.Logf("Total findings: %d", len(rep.Findings))
 	for _, f := range rep.Findings {
+		if f.Outcome != OutcomeOK {
+			t.Logf("NON-OK: check=%s id=%s outcome=%s expl=%s actions=%d", f.Key.CheckID, f.Key.InstanceID, f.Outcome, f.Explanation, len(f.Actions))
+		}
 		for _, a := range f.Actions {
 			t.Logf("Action: mode=%s, id=%s, check=%s, label=%s, reason=%s", a.Mode, a.ID, f.Key.CheckID, a.Label, a.Reason)
 		}

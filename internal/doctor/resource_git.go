@@ -1,6 +1,7 @@
 package doctor
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -132,15 +133,38 @@ func inspectGitResource(ctx context.Context, h *Host, _ Instance, r ResourceSour
 		return f
 	}
 	f.Evidence = append(f.Evidence, Fact{State: EvidenceKnown, Label: "Current Git branch", Value: name, Source: "local Git metadata", ObservedAt: hostNow(h)})
+
+	// Resolve local semantic version or tag before checking worktree status.
+	var localTag string
+	if desc, descErr := run("describe", "--tags", "--abbrev=0", "HEAD"); descErr == nil && desc.ExitCode == 0 && !desc.Truncated {
+		t := strings.TrimSpace(string(desc.Stdout))
+		if validText(t, 64) && t != "" {
+			localTag = t
+		}
+	}
+	if localTag == "" {
+		if pt, ptErr := run("tag", "--points-at", "HEAD"); ptErr == nil && pt.ExitCode == 0 && !pt.Truncated {
+			lines := strings.Split(strings.TrimSpace(string(pt.Stdout)), "\n")
+			if len(lines) > 0 && validText(lines[0], 64) && lines[0] != "" {
+				localTag = strings.TrimSpace(lines[0])
+			}
+		}
+	}
+	if localTag == "" {
+		if rawPkg, pkgErr := ReadBounded(ctx, filepath.Join(r.Path, "package.json"), 4096); pkgErr == nil {
+			var pkgMeta struct{ Version string }
+			if json.Unmarshal(rawPkg, &pkgMeta) == nil && validText(pkgMeta.Version, 64) && pkgMeta.Version != "" {
+				localTag = canonicalSemver(pkgMeta.Version)
+			}
+		}
+	}
+	if localTag != "" {
+		f.Evidence = append(f.Evidence, Fact{State: EvidenceKnown, Label: "Installed version", Value: localTag, Source: "local Git tag or package metadata", ObservedAt: hostNow(h)})
+	}
+
 	status, e := run("status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=all")
-	if e != nil || status.Truncated {
-		return f
-	}
-	if len(status.Stdout) > 0 {
-		f.Outcome = OutcomeAttention
-		f.Explanation = "The checkout contains tracked or untracked changes. No update is proposed."
-		return f
-	}
+	hasWorktreeChanges := e == nil && !status.Truncated && gitResourceHasWorktreeChanges(status.Stdout)
+
 	targetRef := r.RequestedRef
 	if targetRef == "" {
 		if up, upErr := run("rev-parse", "--abbrev-ref", "@{upstream}"); upErr == nil && up.ExitCode == 0 && !up.Truncated {
@@ -176,23 +200,6 @@ func inspectGitResource(ctx context.Context, h *Host, _ Instance, r ResourceSour
 		return f
 	}
 
-	// First, check if the repository publishes semver releases or tags.
-	var localTag string
-	if desc, descErr := run("describe", "--tags", "--abbrev=0", "HEAD"); descErr == nil && desc.ExitCode == 0 && !desc.Truncated {
-		t := strings.TrimSpace(string(desc.Stdout))
-		if validText(t, 64) && t != "" {
-			localTag = t
-		}
-	}
-	if localTag == "" {
-		if pt, ptErr := run("tag", "--points-at", "HEAD"); ptErr == nil && pt.ExitCode == 0 && !pt.Truncated {
-			lines := strings.Split(strings.TrimSpace(string(pt.Stdout)), "\n")
-			if len(lines) > 0 && validText(lines[0], 64) && lines[0] != "" {
-				localTag = strings.TrimSpace(lines[0])
-			}
-		}
-	}
-
 	if localTag != "" {
 		var remoteTag string
 		var releasePageURL string
@@ -221,18 +228,22 @@ func inspectGitResource(ctx context.Context, h *Host, _ Instance, r ResourceSour
 		}
 
 		if remoteTag != "" {
+			f.Evidence = append(f.Evidence, Fact{State: EvidenceKnown, Label: "Upstream release", Value: remoteTag, Source: "public GitHub release", ObservedAt: hostNow(h)})
+			if releasePageURL != "" {
+				f.References = append(f.References, PublicReference{Kind: "release", Label: "GitHub release", URL: releasePageURL})
+			}
+
+			if hasWorktreeChanges {
+				f.Outcome = OutcomeAttention
+				f.Explanation = "The checkout contains tracked or untracked changes. No update is proposed."
+				return f
+			}
+
 			order, cmpErr := CompareVersions(localTag, remoteTag, "semver")
 			if cmpErr == nil {
 				if order < 0 {
 					f.Outcome = OutcomeAttention
 					f.Explanation = fmt.Sprintf("A newer upstream release (%s) is available for %s (installed: %s).", remoteTag, filepath.Base(r.Identity), localTag)
-					f.Evidence = append(f.Evidence,
-						Fact{State: EvidenceKnown, Label: "Installed version", Value: localTag, Source: "local Git tag", ObservedAt: hostNow(h)},
-						Fact{State: EvidenceKnown, Label: "Upstream release", Value: remoteTag, Source: "public GitHub release", ObservedAt: hostNow(h)},
-					)
-					if releasePageURL != "" {
-						f.References = append(f.References, PublicReference{Kind: "release", Label: "GitHub release", URL: releasePageURL})
-					}
 					if piExe, ok := findExecutable(h, "pi"); ok && r.Manager == "pi" {
 						f.Actions = []ActionProposal{
 							{
@@ -264,13 +275,15 @@ func inspectGitResource(ctx context.Context, h *Host, _ Instance, r ResourceSour
 				}
 				f.Outcome = OutcomeOK
 				f.Explanation = fmt.Sprintf("Installed release %s matches or exceeds upstream release (%s).", localTag, remoteTag)
-				f.Evidence = append(f.Evidence,
-					Fact{State: EvidenceKnown, Label: "Installed version", Value: localTag, Source: "local Git tag", ObservedAt: hostNow(h)},
-					Fact{State: EvidenceKnown, Label: "Upstream release", Value: remoteTag, Source: "public GitHub release", ObservedAt: hostNow(h)},
-				)
 				return f
 			}
 		}
+	}
+
+	if hasWorktreeChanges {
+		f.Outcome = OutcomeAttention
+		f.Explanation = "The checkout contains tracked or untracked changes. No update is proposed."
+		return f
 	}
 
 	remote, e := h.Fetch(ctx, "https://api.github.com/repos/"+parts[1]+"/"+parts[2]+"/commits/"+url.PathEscape(targetRef))
@@ -313,4 +326,24 @@ func gitObjectID(value string) bool {
 		}
 	}
 	return true
+}
+
+func gitResourceHasWorktreeChanges(status []byte) bool {
+	for entry := range bytes.SplitSeq(status, []byte{0}) {
+		if len(entry) < 3 {
+			continue
+		}
+		if bytes.HasPrefix(entry, []byte("!!")) {
+			continue
+		}
+		// Ignore package-lock.json generated by runtime npm installs
+		if bytes.HasPrefix(entry, []byte("??")) {
+			path := strings.TrimSpace(string(entry[2:]))
+			if path == "package-lock.json" || strings.HasSuffix(path, "/package-lock.json") {
+				continue
+			}
+		}
+		return true
+	}
+	return false
 }

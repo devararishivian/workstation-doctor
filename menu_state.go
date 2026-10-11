@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -265,6 +266,7 @@ func (d *doctorApp) returnFromActionDone() {
 func (d *doctorApp) prepareAutomaticFixes(filterComponent string) {
 	rep := d.report.Get()
 	var preps []app.PreparedAction
+	seenCmd := map[string]bool{}
 
 	for _, f := range rep.Findings {
 		if filterComponent != "" && f.Key.CheckID != filterComponent {
@@ -272,6 +274,13 @@ func (d *doctorApp) prepareAutomaticFixes(filterComponent string) {
 		}
 		for _, a := range f.Actions {
 			if a.Mode == doctor.ActionAutomatic {
+				cmd := ""
+				if len(a.Steps) > 0 && len(a.Steps[0].Command.Args) > 0 {
+					cmd = a.Steps[0].Command.Executable + " " + strings.Join(a.Steps[0].Command.Args, " ")
+				}
+				if cmd != "" && seenCmd[cmd] {
+					continue
+				}
 				if d.service == nil {
 					d.statusMsg.Set("Service unavailable")
 					return
@@ -279,6 +288,9 @@ func (d *doctorApp) prepareAutomaticFixes(filterComponent string) {
 				prep, err := d.service.Prepare(d.ctx, f.Key, a.ID)
 				if err != nil {
 					continue
+				}
+				if cmd != "" {
+					seenCmd[cmd] = true
 				}
 				preps = append(preps, prep)
 			}

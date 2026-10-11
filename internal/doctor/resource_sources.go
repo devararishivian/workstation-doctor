@@ -204,6 +204,9 @@ func resourceDiscovery(ctx context.Context, h *Host, s Scope, id string, superpo
 		if superpowers && !explicit && !strings.HasSuffix(r.Identity, "/superpowers") && filepath.Base(r.Path) != "superpowers" {
 			continue
 		}
+		if !superpowers && !explicit && (strings.HasSuffix(r.Identity, "/superpowers") || filepath.Base(r.Path) == "superpowers") {
+			continue
+		}
 		i := sourceInstance(h, id, r)
 		if i.ID == "" || seen[i.ID] {
 			continue

@@ -42,7 +42,7 @@ func TestDeclaredResourceRejectsTraversal(t *testing.T) {
 func TestPiPackageSourceKinds(t *testing.T) {
 	t.Parallel()
 	h := testHost(t)
-	resourceFile(t, filepath.Join(h.Home, ".pi", "agent", "settings.json"), `{"packages":["./local","npm:example@1.2.3","git:github.com/obra/superpowers@main","unsupported:tool"]}`)
+	resourceFile(t, filepath.Join(h.Home, ".pi", "agent", "settings.json"), `{"packages":["./local","npm:example@1.2.3","git:github.com/example/extension@main","unsupported:tool"]}`)
 	d := discoverPiPackages(t.Context(), h, Scope{})
 	if len(d.Instances) != 4 {
 		t.Fatal(d)
