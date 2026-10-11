@@ -202,7 +202,7 @@ func componentDetail(report doctor.AuditReport, checkID string) Detail {
 					Heading: "Summary",
 					Rows: []DetailRow{
 						{Label: "Check", Value: checkID},
-						{Label: "Status", Value: "Not Installed (N/A)"},
+						{Label: "Status", Value: "Not applicable"},
 					},
 				},
 			},
@@ -227,9 +227,9 @@ func componentDetail(report doctor.AuditReport, checkID string) Detail {
 		statusLabel := "OK"
 		switch f.Outcome {
 		case doctor.OutcomeAttention:
-			statusLabel = "Attention / Update Required"
+			statusLabel = "Update available"
 		case doctor.OutcomeNotApplicable:
-			statusLabel = "Not Applicable (N/A)"
+			statusLabel = "Not applicable"
 		case doctor.OutcomeUnknown:
 			statusLabel = "Unknown"
 		}
@@ -247,7 +247,7 @@ func componentDetail(report doctor.AuditReport, checkID string) Detail {
 		}
 	} else {
 		detail = Detail{
-			Title: fmt.Sprintf("Component: %s (%d items inspected)", checkID, len(findings)),
+			Title: fmt.Sprintf("Component: %s (%d items checked)", checkID, len(findings)),
 			Sections: []DetailSection{
 				{
 					Heading: "Summary",
@@ -255,7 +255,7 @@ func componentDetail(report doctor.AuditReport, checkID string) Detail {
 						{Label: "Check", Value: checkID},
 						{Label: "Total Items", Value: fmt.Sprintf("%d", len(findings))},
 						{Label: "OK", Value: fmt.Sprintf("%d", nOK)},
-						{Label: "Attention / Updates", Value: fmt.Sprintf("%d", nAttention)},
+						{Label: "Updates", Value: fmt.Sprintf("%d", nAttention)},
 						{Label: "Unknown", Value: fmt.Sprintf("%d", nUnknown)},
 					},
 				},
@@ -324,7 +324,7 @@ func componentDetail(report doctor.AuditReport, checkID string) Detail {
 				})
 			}
 			detail.Sections = append(detail.Sections, DetailSection{
-				Heading: "Evidence & Diagnostics",
+				Heading: "Evidence",
 				Rows:    evRows,
 			})
 		}
@@ -337,7 +337,7 @@ func componentDetail(report doctor.AuditReport, checkID string) Detail {
 				})
 			}
 			detail.Sections = append(detail.Sections, DetailSection{
-				Heading: "Public References",
+				Heading: "References",
 				Rows:    refRows,
 			})
 		}
@@ -410,7 +410,7 @@ func actionDetail(preview app.Preview) Detail {
 		Title: fmt.Sprintf("Action Preview: %s", preview.Label),
 		Sections: []DetailSection{
 			{
-				Heading: "Action Overview",
+				Heading: "Update details",
 				Rows: []DetailRow{
 					{Label: "Action ID", Value: preview.ActionID},
 					{Label: "Integration", Value: preview.IntegrationID},
@@ -448,7 +448,7 @@ func actionDetail(preview app.Preview) Detail {
 			})
 		}
 		detail.Sections = append(detail.Sections, DetailSection{
-			Heading: "Expected Side Effects",
+			Heading: "Side effects",
 			Rows:    effectRows,
 		})
 	}
@@ -503,10 +503,10 @@ func historyDetail(record store.ActionRecord) Detail {
 	}
 
 	detail := Detail{
-		Title: fmt.Sprintf("Action Record: %s (%s)", record.Label, record.ID),
+		Title: fmt.Sprintf("Update Record: %s (%s)", record.Label, record.ID),
 		Sections: []DetailSection{
 			{
-				Heading: "Execution & Outcome",
+				Heading: "Result",
 				Rows: []DetailRow{
 					{Label: "Action ID", Value: record.ID},
 					{Label: "Integration", Value: record.IntegrationID},

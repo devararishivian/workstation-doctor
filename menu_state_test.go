@@ -830,6 +830,20 @@ func TestMenuAutomaticFixWithActionPreparesPreview(t *testing.T) {
 	if d.preparedAction == nil {
 		t.Fatal("expected non-nil preparedAction")
 	}
+	elem := d.renderPreviewAction()
+	text := extractElementText(elem)
+	if !strings.Contains(text, "Confirm Update") {
+		t.Errorf("expected title 'Confirm Update', got:\n%s", text)
+	}
+	if strings.Contains(text, "Confirmed Action Preview") {
+		t.Errorf("should not contain old title 'Confirmed Action Preview'")
+	}
+	if !strings.Contains(text, "Apply this update? [y: Yes · n/Esc: Cancel]") {
+		t.Errorf("expected prompt 'Apply this update? [y: Yes · n/Esc: Cancel]', got:\n%s", text)
+	}
+	if strings.Contains(text, "Execute this action?") {
+		t.Errorf("should not contain old prompt 'Execute this action?'")
+	}
 }
 
 func TestMenuBatchAutomaticFixMultipleComponents(t *testing.T) {
@@ -929,6 +943,13 @@ func TestMenuBatchAutomaticFixMultipleComponents(t *testing.T) {
 	elemPreview := d.renderPreviewAction()
 	if elemPreview == nil {
 		t.Fatal("renderPreviewAction returned nil for batch actions")
+	}
+	batchPreviewText := extractElementText(elemPreview)
+	if !strings.Contains(batchPreviewText, "Confirm Update") {
+		t.Errorf("expected title 'Confirm Update', got:\n%s", batchPreviewText)
+	}
+	if !strings.Contains(batchPreviewText, "Apply all 3 updates? [y: Yes · n/Esc: Cancel · ↑/↓: Scroll]") {
+		t.Errorf("expected batch prompt, got:\n%s", batchPreviewText)
 	}
 
 	// 2. Component filter: only pi-packages
@@ -1507,6 +1528,197 @@ func TestSelectFixesKeyMap(t *testing.T) {
 		}
 	}
 }
+
+func extractElementText(e *tui.Element) string {
+	if e == nil {
+		return ""
+	}
+	var sb strings.Builder
+	if txt := e.Text(); txt != "" {
+		sb.WriteString(txt)
+		sb.WriteString("\n")
+	}
+	for _, child := range e.Children() {
+		sb.WriteString(extractElementText(child))
+	}
+	return sb.String()
+}
+
+func TestResultsScreenWording(t *testing.T) {
+	app := newDoctorApp(t.Context(), nil)
+	report := doctor.AuditReport{
+		Findings: []doctor.Finding{
+			{
+				Key:         doctor.FindingKey{CheckID: "comp-ok"},
+				Outcome:     doctor.OutcomeOK,
+				Explanation: "Component is healthy",
+			},
+			{
+				Key:         doctor.FindingKey{CheckID: "comp-update"},
+				Outcome:     doctor.OutcomeAttention,
+				Explanation: "Update available",
+				Actions: []doctor.ActionProposal{
+					{
+						ID:   "act-1",
+						Mode: doctor.ActionAutomatic,
+						Steps: []doctor.CommandStep{
+							{Command: doctor.Command{Executable: "echo", Args: []string{"update"}}},
+						},
+					},
+				},
+			},
+		},
+	}
+	app.report.Set(report)
+	elem := app.renderResults()
+	if elem == nil {
+		t.Fatal("renderResults returned nil")
+	}
+	text := extractElementText(elem)
+
+	if !strings.Contains(text, "Workstation Check Results") {
+		t.Errorf("expected title to contain 'Workstation Check Results', got text:\n%s", text)
+	}
+	if strings.Contains(text, "Workstation Audit Results") {
+		t.Errorf("title should not contain 'Workstation Audit Results'")
+	}
+	if !strings.Contains(text, "components checked") {
+		t.Errorf("expected 'components checked', got text:\n%s", text)
+	}
+	if strings.Contains(text, "components inspected") {
+		t.Errorf("counter should not contain 'components inspected'")
+	}
+	if !strings.Contains(text, "SUMMARY") {
+		t.Errorf("expected column header 'SUMMARY', got text:\n%s", text)
+	}
+	if strings.Contains(text, "NOTE") {
+		t.Errorf("column header should not contain 'NOTE'")
+	}
+	if !strings.Contains(text, "Update: 1") {
+		t.Errorf("expected summary pill to contain 'Update: 1', got text:\n%s", text)
+	}
+	if strings.Contains(text, "NEED UPDATE") {
+		t.Errorf("summary pill should not contain 'NEED UPDATE'")
+	}
+	if !strings.Contains(text, "Unknown: 0") {
+		t.Errorf("expected summary pill to contain 'Unknown: 0', got text:\n%s", text)
+	}
+	if strings.Contains(text, "UNKNOWN:") {
+		t.Errorf("summary pill should not contain 'UNKNOWN:'")
+	}
+	if !strings.Contains(text, "Fix updates") {
+		t.Errorf("footer should contain 'Fix updates', got text:\n%s", text)
+	}
+	if strings.Contains(text, "Run Automatic Fix") {
+		t.Errorf("footer should not contain 'Run Automatic Fix'")
+	}
+	if !strings.Contains(text, "View details") {
+		t.Errorf("footer should contain 'View details', got text:\n%s", text)
+	}
+	if strings.Contains(text, "View Details") {
+		t.Errorf("footer should use lowercase 'View details'")
+	}
+}
+
+func TestRunningScreenWording(t *testing.T) {
+	d := newDoctorApp(t.Context(), nil)
+	elem := d.renderRunning()
+	if elem == nil {
+		t.Fatal("renderRunning returned nil")
+	}
+	text := extractElementText(elem)
+	if !strings.Contains(text, "Checking component status...") {
+		t.Errorf("expected 'Checking component status...', got text:\n%s", text)
+	}
+	if strings.Contains(text, "Running workstation health checks concurrently...") {
+		t.Errorf("should not contain old hint 'Running workstation health checks concurrently...'")
+	}
+}
+
+func TestNoFixesScreenWording(t *testing.T) {
+	d := newDoctorApp(t.Context(), nil)
+	elem := d.renderNoFixes()
+	if elem == nil {
+		t.Fatal("renderNoFixes returned nil")
+	}
+	text := extractElementText(elem)
+	if !strings.Contains(text, "All Components Are Current") {
+		t.Errorf("expected title 'All Components Are Current', got:\n%s", text)
+	}
+	if strings.Contains(text, "Automatic Maintenance Notice") {
+		t.Errorf("should not contain old title 'Automatic Maintenance Notice'")
+	}
+	if !strings.Contains(text, "All components are up to date. No updates are available.") {
+		t.Errorf("expected body 'All components are up to date. No updates are available.', got:\n%s", text)
+	}
+	if strings.Contains(text, "Show ordered manual steps") {
+		t.Errorf("should not contain reference to manual steps [2]")
+	}
+	if strings.Contains(text, "Menu") {
+		t.Errorf("should not contain reference to Menu")
+	}
+	if !strings.Contains(text, "Return to results") {
+		t.Errorf("expected footer to contain 'Return to results', got:\n%s", text)
+	}
+}
+
+func TestActionDoneScreenWording(t *testing.T) {
+	// Success single action
+	dSuccess := newDoctorApp(t.Context(), nil)
+	dSuccess.actionReport = &app.ActionReport{
+		Execution:    store.ExecutionCompleted,
+		Verification: store.VerificationPassed,
+	}
+	elem := dSuccess.renderActionDone()
+	text := extractElementText(elem)
+	if !strings.Contains(text, "Update Completed") {
+		t.Errorf("expected title 'Update Completed', got:\n%s", text)
+	}
+	if strings.Contains(text, "Action Result & Verification") {
+		t.Errorf("should not contain old title 'Action Result & Verification'")
+	}
+	if !strings.Contains(text, "Press Enter to return to results.") {
+		t.Errorf("expected hint 'Press Enter to return to results.', got:\n%s", text)
+	}
+
+	// Failed single action
+	dFailed := newDoctorApp(t.Context(), nil)
+	dFailed.actionReport = &app.ActionReport{
+		Execution:    store.ExecutionFailed,
+		Verification: store.VerificationFailed,
+	}
+	elemFailed := dFailed.renderActionDone()
+	textFailed := extractElementText(elemFailed)
+	if !strings.Contains(textFailed, "Update Failed") {
+		t.Errorf("expected title 'Update Failed', got:\n%s", textFailed)
+	}
+	if strings.Contains(textFailed, "Action Execution Failed") {
+		t.Errorf("should not contain old title 'Action Execution Failed'")
+	}
+
+	// Batch partial
+	dBatch := newDoctorApp(t.Context(), nil)
+	dBatch.batchReports = []app.ActionReport{
+		{Execution: store.ExecutionCompleted, Verification: store.VerificationPassed},
+		{Execution: store.ExecutionFailed, Verification: store.VerificationFailed},
+	}
+	elemBatch := dBatch.renderActionDone()
+	textBatch := extractElementText(elemBatch)
+	if !strings.Contains(textBatch, "1 of 2 Updates Completed") {
+		t.Errorf("expected title '1 of 2 Updates Completed', got:\n%s", textBatch)
+	}
+	if strings.Contains(textBatch, "Action Execution Incomplete") {
+		t.Errorf("should not contain old title 'Action Execution Incomplete'")
+	}
+	if !strings.Contains(textBatch, "Press Enter to re-check and return to results.") {
+		t.Errorf("expected batch hint 'Press Enter to re-check and return to results.', got:\n%s", textBatch)
+	}
+	if strings.Contains(textBatch, "re-run audit") {
+		t.Errorf("should not contain old hint 're-run audit'")
+	}
+}
+
+
 
 
 

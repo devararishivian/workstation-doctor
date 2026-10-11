@@ -93,7 +93,7 @@ func (d *doctorApp) renderRunning() *tui.Element {
 	card.AddChild(spinText)
 
 	hint := tui.New(
-		tui.WithText("Running workstation health checks concurrently..."),
+		tui.WithText("Checking component status..."),
 		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
 	)
 	card.AddChild(hint)
@@ -269,11 +269,11 @@ func (d *doctorApp) renderResults() *tui.Element {
 		tui.WithJustify(tui.JustifySpaceBetween),
 	)
 	topBar.AddChild(tui.New(
-		tui.WithText("Workstation Audit Results"),
+		tui.WithText("Workstation Check Results"),
 		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinBlue).Bold()),
 	))
 	topBar.AddChild(tui.New(
-		tui.WithText(fmt.Sprintf("%d components inspected", len(rows))),
+		tui.WithText(fmt.Sprintf("%d components checked", len(rows))),
 		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
 	))
 	root.AddChild(topBar)
@@ -295,7 +295,7 @@ func (d *doctorApp) renderResults() *tui.Element {
 	colHeader.AddChild(tui.New(tui.WithWidth(18), tui.WithText("INSTALLED"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
 	colHeader.AddChild(tui.New(tui.WithWidth(18), tui.WithText("LATEST"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
 	colHeader.AddChild(tui.New(tui.WithWidth(12), tui.WithText("STATUS"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
-	colHeader.AddChild(tui.New(tui.WithFlexGrow(1.0), tui.WithText("NOTE"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
+	colHeader.AddChild(tui.New(tui.WithFlexGrow(1.0), tui.WithText("SUMMARY"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
 	root.AddChild(colHeader)
 
 	root.AddChild(hrLine())
@@ -401,12 +401,12 @@ func (d *doctorApp) renderResults() *tui.Element {
 	))
 	if nUpdate > 0 {
 		summaryRow.AddChild(tui.New(
-			tui.WithText(fmt.Sprintf("[ NEED UPDATE: %d ]", nUpdate)),
+			tui.WithText(fmt.Sprintf("[ Update: %d ]", nUpdate)),
 			tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow).Bold()),
 		))
 	} else {
 		summaryRow.AddChild(tui.New(
-			tui.WithText("[ NEED UPDATE: 0 ]"),
+			tui.WithText("[ Update: 0 ]"),
 			tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
 		))
 	}
@@ -418,12 +418,12 @@ func (d *doctorApp) renderResults() *tui.Element {
 	}
 	if nUnknown > 0 {
 		summaryRow.AddChild(tui.New(
-			tui.WithText(fmt.Sprintf("[ UNKNOWN: %d ]", nUnknown)),
+			tui.WithText(fmt.Sprintf("[ Unknown: %d ]", nUnknown)),
 			tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinRed).Bold()),
 		))
 	} else {
 		summaryRow.AddChild(tui.New(
-			tui.WithText("[ UNKNOWN: 0 ]"),
+			tui.WithText("[ Unknown: 0 ]"),
 			tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
 		))
 	}
@@ -449,11 +449,9 @@ func (d *doctorApp) renderResults() *tui.Element {
 		}
 	}
 
-	footerText := "[Esc / b: Back to Menu · Enter / d: Details · ↑/↓: Navigate · q: Quit]"
+	footerText := "[Enter: View details · r: Re-check · h: History · q: Quit]"
 	if nAutoFixes > 0 {
-		footerText = fmt.Sprintf("[Enter / d: View Details · 3: Run Automatic Fix (%d pending) · 2: Manual Steps · b: Menu · q: Quit]", nAutoFixes)
-	} else if nUpdate > 0 {
-		footerText = "[Enter / d: View Details · 2: Manual Steps · b: Menu · q: Quit]"
+		footerText = "[Enter: View details · f: Fix updates · r: Re-check · h: History · q: Quit]"
 	}
 	nav := tui.New(
 		tui.WithText(footerText),
@@ -476,7 +474,7 @@ func (d *doctorApp) renderHistory() *tui.Element {
 	)
 
 	title := tui.New(
-		tui.WithText("Maintenance Action History"),
+		tui.WithText("Update History"),
 		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinBlue).Bold()),
 	)
 	root.AddChild(title)
@@ -488,10 +486,10 @@ func (d *doctorApp) renderHistory() *tui.Element {
 		tui.WithHeight(1),
 	)
 	colHeader.AddChild(tui.New(tui.WithWidth(22), tui.WithText("STARTED"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
-	colHeader.AddChild(tui.New(tui.WithWidth(28), tui.WithText("ACTION ID"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
+	colHeader.AddChild(tui.New(tui.WithWidth(28), tui.WithText("ID"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
 	colHeader.AddChild(tui.New(tui.WithWidth(14), tui.WithText("EXECUTION"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
 	colHeader.AddChild(tui.New(tui.WithWidth(14), tui.WithText("VERIFICATION"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
-	colHeader.AddChild(tui.New(tui.WithFlexGrow(1.0), tui.WithText("LABEL"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
+	colHeader.AddChild(tui.New(tui.WithFlexGrow(1.0), tui.WithText("DESCRIPTION"), tui.WithTextStyle(tui.NewStyle().Bold().Foreground(catppuccinMauve))))
 	root.AddChild(colHeader)
 
 	root.AddChild(hrLine())
@@ -504,7 +502,7 @@ func (d *doctorApp) renderHistory() *tui.Element {
 	)
 
 	if len(actions) == 0 {
-		empty := tui.New(tui.WithText("No maintenance actions recorded yet."))
+		empty := tui.New(tui.WithText("No updates recorded yet."))
 		tableBox.AddChild(empty)
 	} else {
 		currentSel := max(0, min(d.selectedResult.Get(), len(actions)-1))
@@ -577,7 +575,7 @@ func (d *doctorApp) renderHistory() *tui.Element {
 	root.AddChild(hrLine())
 
 	nav := tui.New(
-		tui.WithText("[Esc / b / m: Back to Menu · Enter / d: View Details · ↑/↓: Scroll · q: Quit]"),
+		tui.WithText("[Esc / b: Back to results · Enter: View details · ↑/↓: Scroll · q: Quit]"),
 		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
 	)
 	root.AddChild(nav)
@@ -690,7 +688,7 @@ func (d *doctorApp) renderDetail() *tui.Element {
 
 	titleText := det.Title
 	if titleText == "" {
-		titleText = "Inspection Details"
+		titleText = "Check Details"
 	}
 
 	topBar := tui.New(
@@ -753,7 +751,7 @@ func (d *doctorApp) renderDetail() *tui.Element {
 					switch row.Label {
 					case "OK":
 						valStyle = valStyle.Foreground(catppuccinGreen)
-					case "Attention / Updates":
+					case "Attention / Updates", "Updates":
 						if row.Value != "0" {
 							valStyle = valStyle.Foreground(catppuccinYellow)
 						}
@@ -1072,7 +1070,7 @@ func (d *doctorApp) renderPreviewAction() *tui.Element {
 	)
 
 	title := tui.New(
-		tui.WithText("Confirmed Action Preview"),
+		tui.WithText("Confirm Update"),
 		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow).Bold()),
 	)
 	root.AddChild(title)
@@ -1208,7 +1206,7 @@ func (d *doctorApp) renderPreviewAction() *tui.Element {
 				tui.WithGap(0),
 			)
 			effCard.AddChild(tui.New(
-				tui.WithText("Side Effects & Permissions:"),
+				tui.WithText("Side effects:"),
 				tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow).Bold()),
 			))
 			for _, eff := range allEff {
@@ -1292,7 +1290,7 @@ func (d *doctorApp) renderPreviewAction() *tui.Element {
 				tui.WithGap(0),
 			)
 			effCard.AddChild(tui.New(
-				tui.WithText("Side Effects & Permissions:"),
+				tui.WithText("Side effects:"),
 				tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinYellow).Bold()),
 			))
 			for _, eff := range p.SideEffects {
@@ -1312,9 +1310,9 @@ func (d *doctorApp) renderPreviewAction() *tui.Element {
 	root.AddChild(contentBox)
 	root.AddChild(hrLine())
 
-	promptText := "[?] Execute this action? [Press 'y' to confirm · Press 'n' / Esc / any other key to decline]"
+	promptText := "Apply this update? [y: Yes · n/Esc: Cancel]"
 	if len(preps) > 1 {
-		promptText = fmt.Sprintf("[?] Execute all %d actions? [Press 'y' to confirm · Press 'n' / Esc to decline · ↑/↓: Scroll]", len(preps))
+		promptText = fmt.Sprintf("Apply all %d updates? [y: Yes · n/Esc: Cancel · ↑/↓: Scroll]", len(preps))
 	}
 	prompt := tui.New(
 		tui.WithText(promptText),
@@ -1327,7 +1325,7 @@ func (d *doctorApp) renderPreviewAction() *tui.Element {
 
 func (d *doctorApp) renderActionDone() *tui.Element {
 	borderStyle := catppuccinGreen
-	titleText := "Action Result & Verification"
+	titleText := "Update Completed"
 	nSuccess := 0
 	nFailed := 0
 	if len(d.batchReports) > 0 {
@@ -1340,12 +1338,12 @@ func (d *doctorApp) renderActionDone() *tui.Element {
 		}
 		if nFailed > 0 {
 			borderStyle = catppuccinRed
-			titleText = "Action Execution Incomplete"
+			titleText = fmt.Sprintf("%d of %d Updates Completed", nSuccess, len(d.batchReports))
 		}
 	} else if d.actionReport != nil {
 		if d.actionReport.Execution == store.ExecutionFailed || d.actionReport.Execution == store.ExecutionCanceled || d.actionReport.SafeError != "" {
 			borderStyle = catppuccinRed
-			titleText = "Action Execution Failed"
+			titleText = "Update Failed"
 		}
 	}
 
@@ -1384,7 +1382,7 @@ func (d *doctorApp) renderActionDone() *tui.Element {
 			tui.WithGap(0),
 		)
 		card.AddChild(tui.New(
-			tui.WithText(fmt.Sprintf("Summary: %d / %d actions executed successfully", nSuccess, len(d.batchReports))),
+			tui.WithText(fmt.Sprintf("Summary: %d of %d updates completed successfully", nSuccess, len(d.batchReports))),
 			tui.WithTextStyle(tui.NewStyle().Bold().Foreground(borderStyle)),
 		))
 
@@ -1435,7 +1433,7 @@ func (d *doctorApp) renderActionDone() *tui.Element {
 		contentBox.AddChild(card)
 
 		contentBox.AddChild(tui.New(
-			tui.WithText("Press Enter or 'b' to re-run audit and return to the results dashboard."),
+			tui.WithText("Press Enter to re-check and return to results."),
 			tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
 		))
 	case d.actionReport != nil:
@@ -1475,7 +1473,7 @@ func (d *doctorApp) renderActionDone() *tui.Element {
 		contentBox.AddChild(card)
 
 		contentBox.AddChild(tui.New(
-			tui.WithText("Press Enter or 'b' to return to the results dashboard."),
+			tui.WithText("Press Enter to return to results."),
 			tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
 		))
 	default:
@@ -1488,7 +1486,7 @@ func (d *doctorApp) renderActionDone() *tui.Element {
 	root.AddChild(hrLine())
 
 	nav := tui.New(
-		tui.WithText("[Esc / Enter / b: Re-audit & Return to Results · ↑/↓: Scroll · q: Quit]"),
+		tui.WithText("[Enter / Esc: Return to results · ↑/↓: Scroll · q: Quit]"),
 		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
 	)
 	root.AddChild(nav)
@@ -1517,25 +1515,20 @@ func (d *doctorApp) renderNoFixes() *tui.Element {
 	)
 
 	title := tui.New(
-		tui.WithText("Automatic Maintenance Notice"),
+		tui.WithText("All Components Are Current"),
 		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinGreen).Bold()),
 	)
 	card.AddChild(title)
 	card.AddChild(hrLine())
 
 	msg := tui.New(
-		tui.WithText("No automatic fixes are pending. All components are current, or require manual maintenance steps."),
+		tui.WithText("All components are up to date. No updates are available."),
 	)
 	card.AddChild(msg)
-
-	card.AddChild(tui.New(
-		tui.WithText("Select 'Show ordered manual steps' [2] from the menu to review components requiring manual actions."),
-		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
-	))
 	card.AddChild(hrLine())
 
 	nav := tui.New(
-		tui.WithText("[Esc / Enter / b: Return to Menu · 2: Show Manual Steps · q: Quit]"),
+		tui.WithText("[Enter / Esc: Return to results · q: Quit]"),
 		tui.WithTextStyle(tui.NewStyle().Foreground(catppuccinDim)),
 	)
 	card.AddChild(nav)

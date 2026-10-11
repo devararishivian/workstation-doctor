@@ -142,6 +142,18 @@ func TestActionDetail(t *testing.T) {
 	if !strings.Contains(text, "Updates binary") {
 		t.Fatalf("missing side effect: %s", text)
 	}
+	if !strings.Contains(text, "Update details") {
+		t.Errorf("expected heading 'Update details', got:\n%s", text)
+	}
+	if strings.Contains(text, "Action Overview") {
+		t.Errorf("should not contain old heading 'Action Overview'")
+	}
+	if !strings.Contains(text, "Side effects") {
+		t.Errorf("expected heading 'Side effects', got:\n%s", text)
+	}
+	if strings.Contains(text, "Expected Side Effects") {
+		t.Errorf("should not contain old heading 'Expected Side Effects'")
+	}
 }
 
 func TestHistoryDetail(t *testing.T) {
@@ -173,6 +185,12 @@ func TestHistoryDetail(t *testing.T) {
 	}
 	if !strings.Contains(text, "Download and replace") {
 		t.Fatalf("missing step in history detail: %s", text)
+	}
+	if !strings.Contains(text, "Result") {
+		t.Errorf("expected heading 'Result', got:\n%s", text)
+	}
+	if strings.Contains(text, "Execution & Outcome") {
+		t.Errorf("should not contain old heading 'Execution & Outcome'")
 	}
 }
 
@@ -305,5 +323,111 @@ func TestRenderDetailWithUpdateAvailable(t *testing.T) {
 		t.Fatal("renderDetail returned nil")
 	}
 }
+
+func TestDetailScreenWordingUpdate(t *testing.T) {
+	key := doctor.FindingKey{IntegrationID: "pi", CheckID: "pi", InstanceID: "inst-1"}
+	report := doctor.AuditReport{
+		Findings: []doctor.Finding{
+			{
+				Key:         key,
+				Outcome:     doctor.OutcomeAttention,
+				Explanation: "Version 1.0.0 is installed; version 2.0.0 is available.",
+				Actions: []doctor.ActionProposal{
+					{
+						ID:     "update-pi",
+						Label:  "Update Pi",
+						Mode:   doctor.ActionAutomatic,
+						Reason: "New release",
+					},
+				},
+			},
+		},
+	}
+
+	detail := componentDetail(report, "pi")
+	text := detailText(detail)
+
+	if !strings.Contains(text, "Update Available") {
+		t.Errorf("expected section heading 'Update Available', got:\n%s", text)
+	}
+	if strings.Contains(text, "Items Requiring Attention") {
+		t.Errorf("should not contain old heading 'Items Requiring Attention'")
+	}
+
+	var statusFound string
+	for _, sec := range detail.Sections {
+		if sec.Heading == "Summary" {
+			for _, row := range sec.Rows {
+				if row.Label == "Status" {
+					statusFound = row.Value
+				}
+			}
+		}
+	}
+	if statusFound != "Update available" {
+		t.Errorf("expected status 'Update available', got %q", statusFound)
+	}
+	if strings.Contains(text, "Attention / Update Required") {
+		t.Errorf("should not contain old label 'Attention / Update Required'")
+	}
+}
+
+func TestHistoryRenderingOldLabels(t *testing.T) {
+	record := store.ActionRecord{
+		ID:            "act-legacy-1",
+		IntegrationID: "superpowers",
+		CheckID:       "skills",
+		InstanceID:    "inst-1",
+		Label:         "Run pi install git:github.com/obra/superpowers",
+		Kind:          "Automatic",
+		Reason:        "Legacy superpower installation",
+		StartedAt:     time.Now().Add(-2 * time.Hour),
+		Finish: &store.ActionFinish{
+			Execution:    store.ExecutionCompleted,
+			Verification: store.VerificationPassed,
+		},
+	}
+
+	detail := historyDetail(record)
+	text := detailText(detail)
+
+	// Old label appears in output without error
+	if !strings.Contains(text, "Run pi install git:github.com/obra/superpowers") {
+		t.Errorf("expected detail text to contain old label, got:\n%s", text)
+	}
+
+	// Section heading should be "Result" (not "Execution & Outcome")
+	if !strings.Contains(text, "Result") {
+		t.Errorf("expected section heading 'Result', got:\n%s", text)
+	}
+	if strings.Contains(text, "Execution & Outcome") {
+		t.Errorf("should not contain old heading 'Execution & Outcome'")
+	}
+
+	// Also verify UI rendering in history view
+	app := newDoctorApp(t.Context(), nil)
+	app.historyActions.Set([]store.ActionRecord{record})
+	elem := app.renderHistory()
+	if elem == nil {
+		t.Fatal("renderHistory returned nil")
+	}
+	uiText := extractElementText(elem)
+	if !strings.Contains(uiText, "Run pi install git:github.com/obra/superpowers") {
+		t.Errorf("expected history UI to contain old label, got:\n%s", uiText)
+	}
+	if !strings.Contains(uiText, "Update History") {
+		t.Errorf("expected history UI title 'Update History', got:\n%s", uiText)
+	}
+	if strings.Contains(uiText, "Maintenance Action History") {
+		t.Errorf("should not contain old title 'Maintenance Action History'")
+	}
+	if !strings.Contains(uiText, "DESCRIPTION") {
+		t.Errorf("expected column 'DESCRIPTION', got:\n%s", uiText)
+	}
+	if strings.Contains(uiText, "LABEL") {
+		t.Errorf("should not contain column 'LABEL'")
+	}
+}
+
 
 
